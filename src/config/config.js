@@ -22,6 +22,12 @@ module.exports = {
     groupId: process.env.NOTIFICATION_GROUP_ID || null
   },
 
+  // Create LK API
+  createLK: {
+    url: process.env.CREATE_LK_API_URL || 'https://specialist82.pro/create_lk_api.php',
+    token: process.env.CREATE_LK_API_TOKEN || ''
+  },
+
   // API
   api: {
     url: process.env.API_URL || 'https://specialist82.pro/api.php/shop.customer.add',

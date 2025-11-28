@@ -416,6 +416,9 @@ class RegistrationHandler {
         logger.warn('Не удалось получить информацию о пользователе:', e.message);
       }
 
+      // Получаем contact_id из ответа API
+      const contactId = result.data?.id || result.data?.contact_id || null;
+
       // Формируем сообщение для группы
       const notificationMessage = 
         `🎉 НОВАЯ РЕГИСТРАЦИЯ НА САЙТЕ\n\n` +
@@ -426,11 +429,29 @@ class RegistrationHandler {
         `📧 Email: ${state.email}\n\n` +
         `👨‍💼 Зарегистрировал: ${userName}\n` +
         `🕐 Время: ${new Date().toLocaleString('ru-RU')}\n` +
-        `✅ Статус: Успешно`;
+        `✅ Статус: Ожидает подтверждения`;
 
-      await bot.sendMessage(groupId, notificationMessage);
+      // Inline кнопки для подтверждения/отказа
+      const keyboard = {
+        inline_keyboard: [
+          [
+            {
+              text: '✅ Подтвердить',
+              callback_data: `approve_reg_${contactId}_${chatId}`
+            },
+            {
+              text: '❌ Отказать',
+              callback_data: `reject_reg_${contactId}_${chatId}`
+            }
+          ]
+        ]
+      };
+
+      await bot.sendMessage(groupId, notificationMessage, {
+        reply_markup: keyboard
+      });
       
-      logger.info(`Уведомление о регистрации ${state.clientName} отправлено в группу ${groupId}`);
+      logger.info(`Уведомление о регистрации ${state.clientName} отправлено в группу ${groupId} с contact_id: ${contactId}`);
     } catch (error) {
       logger.error('Ошибка отправки уведомления в группу:', error.message);
       // Не прерываем процесс, если не удалось отправить уведомление
