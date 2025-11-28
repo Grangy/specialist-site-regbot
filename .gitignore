@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment (НЕ коммитим реальные данные!)
+.env
+.env.local
+.env.production
+
+# Database (НЕ коммитим базы!)
+data/*.db
+data/*.db-journal
+data/clients.json
+
+# Logs (НЕ коммитим логи!)
+logs/
+*.log
+
+# Excel файлы (НЕ коммитим исходные данные!)
+*.xlsx
+*.xls
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+tmp/
+temp/
+
+# Production
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
+.nyc_output/
+
+
+

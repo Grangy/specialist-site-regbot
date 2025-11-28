@@ -1,0 +1,42 @@
+{
+  "name": "bot-specialist-client-registration",
+  "version": "1.0.0",
+  "description": "Telegram bot for client registration with fuzzy search and API integration",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "convert": "node scripts/convertExcel.js",
+    "setup": "npm install && npm run convert && npm run check",
+    "check": "node scripts/checkSetup.js",
+    "test-api": "node scripts/testApi.js",
+    "stats": "node scripts/stats.js",
+    "clean-db": "node scripts/cleanDatabase.js",
+    "pm2:start": "pm2 start ecosystem.config.js --env production",
+    "pm2:stop": "pm2 stop telegram-bot",
+    "pm2:restart": "pm2 restart telegram-bot",
+    "pm2:logs": "pm2 logs telegram-bot",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "client-registration",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "fuse.js": "^7.0.0",
+    "node-telegram-bot-api": "^0.64.0",
+    "sqlite3": "^5.1.6",
+    "winston": "^3.11.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
+

@@ -1,0 +1,263 @@
+const TelegramBot = require('node-telegram-bot-api');
+const config = require('./config/config');
+const logger = require('./utils/logger');
+const database = require('./database/database');
+const authHandler = require('./handlers/authHandler');
+const registrationHandler = require('./handlers/registrationHandler');
+const keyboards = require('./keyboards/keyboards');
+
+// Создаем экземпляр бота
+const bot = new TelegramBot(config.telegram.token, config.telegram.options);
+
+logger.info('🚀 Telegram бот запущен');
+
+/**
+ * Обработка команды /start
+ */
+bot.onText(/\/start/, async (msg) => {
+  const chatId = msg.chat.id;
+  logger.info(`Команда /start от пользователя ${chatId}`);
+
+  const isAuthorized = await authHandler.checkAuth(bot, msg);
+
+  if (!isAuthorized) {
+    await authHandler.requestPassword(bot, chatId);
+  } else {
+    await bot.sendMessage(
+      chatId,
+      `👋 С возвращением, ${msg.from.first_name}!\n\n` +
+      'Выберите действие из меню:',
+      keyboards.getMainMenu()
+    );
+  }
+});
+
+/**
+ * Обработка команды /help
+ */
+bot.onText(/\/help/, async (msg) => {
+  const chatId = msg.chat.id;
+  
+  const isAuthorized = await authHandler.checkAuth(bot, msg);
+  if (!isAuthorized) {
+    await authHandler.requestPassword(bot, chatId);
+    return;
+  }
+
+  const helpMessage = `
+📖 *Инструкция по использованию бота*
+
+*Регистрация клиента:*
+1️⃣ Нажмите "🔍 Найти клиента"
+2️⃣ Введите название компании
+3️⃣ Выберите нужного клиента из списка
+4️⃣ Введите телефон
+5️⃣ Введите email
+6️⃣ Подтвердите данные
+
+*Основные команды:*
+• /start - Главное меню
+• /help - Эта справка
+• /stats - Ваша статистика
+• /cancel - Отменить текущую операцию
+
+*Форматы данных:*
+📱 Телефон: +79787599070
+📧 Email: user@example.com
+
+Если возникли вопросы - обратитесь к администратору.
+  `;
+
+  await bot.sendMessage(chatId, helpMessage, {
+    parse_mode: 'Markdown',
+    ...keyboards.getMainMenu()
+  });
+});
+
+/**
+ * Обработка команды /stats
+ */
+bot.onText(/\/stats/, async (msg) => {
+  const chatId = msg.chat.id;
+  
+  const isAuthorized = await authHandler.checkAuth(bot, msg);
+  if (!isAuthorized) {
+    await authHandler.requestPassword(bot, chatId);
+    return;
+  }
+
+  await registrationHandler.showUserStats(bot, chatId);
+});
+
+/**
+ * Обработка команды /cancel
+ */
+bot.onText(/\/cancel/, async (msg) => {
+  const chatId = msg.chat.id;
+  
+  const isAuthorized = await authHandler.checkAuth(bot, msg);
+  if (!isAuthorized) {
+    await authHandler.requestPassword(bot, chatId);
+    return;
+  }
+
+  await registrationHandler.cancelRegistration(bot, chatId);
+});
+
+/**
+ * Обработка callback query (inline кнопки)
+ */
+bot.on('callback_query', async (query) => {
+  const chatId = query.message.chat.id;
+  const data = query.data;
+
+  logger.info(`Callback query: ${data} от пользователя ${chatId}`);
+
+  // Проверка авторизации
+  const isAuthorized = await authHandler.checkAuth(bot, { chat: { id: chatId } });
+  if (!isAuthorized) {
+    await bot.answerCallbackQuery(query.id, {
+      text: '❌ Необходима авторизация',
+      show_alert: true
+    });
+    return;
+  }
+
+  try {
+    if (data.startsWith('select_client_')) {
+      await registrationHandler.handleClientSelection(bot, query);
+    } else if (data === 'new_search') {
+      await bot.answerCallbackQuery(query.id);
+      await registrationHandler.startClientSearch(bot, chatId);
+    } else if (data === 'confirm_registration') {
+      await registrationHandler.confirmRegistration(bot, query);
+    } else if (data === 'cancel_registration') {
+      await bot.answerCallbackQuery(query.id);
+      await registrationHandler.cancelRegistration(bot, chatId, true);
+    } else if (data === 'new_registration') {
+      await bot.answerCallbackQuery(query.id);
+      await registrationHandler.startClientSearch(bot, chatId);
+    } else if (data === 'show_stats') {
+      await bot.answerCallbackQuery(query.id);
+      await registrationHandler.showUserStats(bot, chatId);
+    } else {
+      await bot.answerCallbackQuery(query.id, {
+        text: '❌ Неизвестная команда'
+      });
+    }
+  } catch (error) {
+    logger.error('Ошибка обработки callback query:', error);
+    await bot.answerCallbackQuery(query.id, {
+      text: '❌ Произошла ошибка',
+      show_alert: true
+    });
+  }
+});
+
+/**
+ * Обработка текстовых сообщений
+ */
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+
+  // Пропускаем команды (они обрабатываются отдельно)
+  if (text && text.startsWith('/')) {
+    return;
+  }
+
+  logger.info(`Сообщение от ${chatId}: ${text}`);
+
+  // Проверка авторизации
+  const isAuthorized = await authHandler.checkAuth(bot, msg);
+
+  if (!isAuthorized) {
+    // Если не авторизован - пытаемся проверить пароль
+    await authHandler.verifyPassword(bot, msg);
+    return;
+  }
+
+  // Получаем текущее состояние пользователя
+  const state = await registrationHandler.getUserState(chatId);
+
+  try {
+    // Обработка кнопок меню
+    if (text === '🔍 Найти клиента') {
+      await registrationHandler.startClientSearch(bot, chatId);
+    } else if (text === '📊 Моя статистика') {
+      await registrationHandler.showUserStats(bot, chatId);
+    } else if (text === '❓ Помощь') {
+      bot.emit('message', { ...msg, text: '/help' });
+    } else if (text === '⬅️ Назад в меню' || text === '❌ Отменить регистрацию') {
+      await registrationHandler.cancelRegistration(bot, chatId);
+    }
+    // Обработка состояний регистрации
+    else if (state) {
+      if (state.step === 'awaiting_client_name') {
+        await registrationHandler.handleClientNameInput(bot, msg);
+      } else if (state.step === 'awaiting_phone') {
+        await registrationHandler.handlePhoneInput(bot, msg);
+      } else if (state.step === 'awaiting_email') {
+        await registrationHandler.handleEmailInput(bot, msg);
+      } else {
+        await bot.sendMessage(
+          chatId,
+          '🤔 Не понимаю. Используйте меню или /help для справки.',
+          keyboards.getMainMenu()
+        );
+      }
+    } else {
+      // Если нет активного состояния - показываем меню
+      await bot.sendMessage(
+        chatId,
+        '🤔 Не понимаю. Выберите действие из меню:',
+        keyboards.getMainMenu()
+      );
+    }
+  } catch (error) {
+    logger.error('Ошибка обработки сообщения:', error);
+    await bot.sendMessage(
+      chatId,
+      '❌ Произошла ошибка. Попробуйте позже.',
+      keyboards.getMainMenu()
+    );
+  }
+});
+
+/**
+ * Обработка ошибок бота
+ */
+bot.on('polling_error', (error) => {
+  logger.error('Polling error:', error);
+});
+
+/**
+ * Graceful shutdown
+ */
+process.on('SIGINT', () => {
+  logger.info('Получен сигнал SIGINT. Закрываю соединения...');
+  database.close();
+  bot.stopPolling();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  logger.info('Получен сигнал SIGTERM. Закрываю соединения...');
+  database.close();
+  bot.stopPolling();
+  process.exit(0);
+});
+
+// Обработка необработанных исключений
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  database.close();
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+logger.info('✅ Бот готов к работе!');
+

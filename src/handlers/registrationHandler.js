@@ -1,0 +1,442 @@
+const database = require('../database/database');
+const clientService = require('../services/clientService');
+const apiService = require('../services/apiService');
+const logger = require('../utils/logger');
+const keyboards = require('../keyboards/keyboards');
+const config = require('../config/config');
+
+/**
+ * Обработчик регистрации клиентов
+ */
+class RegistrationHandler {
+  constructor() {
+    // Храним состояния пользователей
+    this.userStates = new Map();
+  }
+
+  /**
+   * Получение состояния пользователя
+   */
+  async getUserState(chatId) {
+    if (this.userStates.has(chatId)) {
+      return this.userStates.get(chatId);
+    }
+
+    // Пытаемся загрузить из БД
+    const session = await database.getSession(chatId);
+    if (session) {
+      this.userStates.set(chatId, session);
+      return session;
+    }
+
+    return null;
+  }
+
+  /**
+   * Установка состояния пользователя
+   */
+  async setUserState(chatId, state) {
+    this.userStates.set(chatId, state);
+    await database.saveSession(chatId, state);
+  }
+
+  /**
+   * Очистка состояния пользователя
+   */
+  async clearUserState(chatId) {
+    this.userStates.delete(chatId);
+    await database.deleteSession(chatId);
+  }
+
+  /**
+   * Начало поиска клиента
+   */
+  async startClientSearch(bot, chatId) {
+    await bot.sendMessage(
+      chatId,
+      '🔍 Поиск клиента\n\n' +
+      'Введите наименование клиента или часть названия.\n' +
+      'Я найду 5 наиболее подходящих вариантов.\n\n' +
+      'Например: ООО, Рога, Копыта и т.д.',
+      keyboards.getCancelButton()
+    );
+
+    await this.setUserState(chatId, {
+      step: 'awaiting_client_name',
+      clientName: null,
+      clientCode: null,
+      clientManager: null,
+      phone: null,
+      email: null
+    });
+  }
+
+  /**
+   * Обработка ввода названия клиента
+   */
+  async handleClientNameInput(bot, msg) {
+    const chatId = msg.chat.id;
+    const query = msg.text.trim();
+
+    if (query.length < 2) {
+      await bot.sendMessage(
+        chatId,
+        '⚠️ Введите минимум 2 символа для поиска.'
+      );
+      return;
+    }
+
+    // Ищем клиентов
+    const clients = clientService.searchClients(query);
+
+    if (clients.length === 0) {
+      await bot.sendMessage(
+        chatId,
+        '😔 К сожалению, клиенты не найдены.\n\n' +
+        'Попробуйте изменить запрос или проверьте правильность написания.',
+        keyboards.getCancelButton()
+      );
+      return;
+    }
+
+    // Показываем найденных клиентов
+    let message = `🔍 Найдено клиентов: ${clients.length}\n\n`;
+    message += 'Выберите нужного клиента из списка ниже:';
+
+    await bot.sendMessage(
+      chatId,
+      message,
+      keyboards.getClientSelectionButtons(clients)
+    );
+
+    logger.info(`Найдено ${clients.length} клиентов для запроса: ${query}`);
+  }
+
+  /**
+   * Обработка выбора клиента
+   */
+  async handleClientSelection(bot, query) {
+    const chatId = query.message.chat.id;
+    const clientId = parseInt(query.data.split('_')[2]);
+
+    const client = clientService.getClientById(clientId);
+
+    if (!client) {
+      await bot.answerCallbackQuery(query.id, {
+        text: '❌ Клиент не найден',
+        show_alert: true
+      });
+      return;
+    }
+
+    // Сохраняем выбранного клиента
+    await this.setUserState(chatId, {
+      step: 'awaiting_phone',
+      clientName: client.name,
+      clientCode: client.code,
+      clientManager: client.manager,
+      phone: null,
+      email: null
+    });
+
+    await bot.answerCallbackQuery(query.id);
+
+    await bot.sendMessage(
+      chatId,
+      `✅ Выбран клиент:\n\n` +
+      `📋 Наименование: ${client.name}\n` +
+      `🔢 Код: ${client.code}\n` +
+      `👤 Менеджер: ${client.manager || 'Не указан'}\n\n` +
+      `📱 Теперь введите номер телефона клиента:\n\n` +
+      `Формат: +79787599070`,
+      keyboards.getCancelButton()
+    );
+
+    logger.info(`Клиент ${client.name} выбран пользователем ${chatId}`);
+  }
+
+  /**
+   * Обработка ввода телефона
+   */
+  async handlePhoneInput(bot, msg) {
+    const chatId = msg.chat.id;
+    const phone = msg.text.trim();
+
+    const validation = apiService.validatePhone(phone);
+
+    if (!validation.valid) {
+      await bot.sendMessage(
+        chatId,
+        `❌ ${validation.error}\n\nПопробуйте ещё раз:`,
+        keyboards.getCancelButton()
+      );
+      return;
+    }
+
+    // Обновляем состояние
+    const state = await this.getUserState(chatId);
+    state.phone = validation.phone;
+    state.step = 'awaiting_email';
+    await this.setUserState(chatId, state);
+
+    await bot.sendMessage(
+      chatId,
+      `✅ Телефон сохранен: ${validation.phone}\n\n` +
+      `📧 Теперь введите email клиента:\n\n` +
+      `Формат: user@example.com`,
+      keyboards.getCancelButton()
+    );
+  }
+
+  /**
+   * Обработка ввода email
+   */
+  async handleEmailInput(bot, msg) {
+    const chatId = msg.chat.id;
+    const email = msg.text.trim();
+
+    const validation = apiService.validateEmail(email);
+
+    if (!validation.valid) {
+      await bot.sendMessage(
+        chatId,
+        `❌ ${validation.error}\n\nПопробуйте ещё раз:`,
+        keyboards.getCancelButton()
+      );
+      return;
+    }
+
+    // Обновляем состояние
+    const state = await this.getUserState(chatId);
+    state.email = validation.email;
+    state.step = 'awaiting_confirmation';
+    await this.setUserState(chatId, state);
+
+    // Показываем сводку для подтверждения
+    await bot.sendMessage(
+      chatId,
+      `📋 Проверьте данные перед регистрацией:\n\n` +
+      `👤 Клиент: ${state.clientName}\n` +
+      `🔢 Код 1С: ${state.clientCode}\n` +
+      `👔 Менеджер: ${state.clientManager || 'Не указан'}\n` +
+      `📱 Телефон: ${state.phone}\n` +
+      `📧 Email: ${state.email}\n\n` +
+      `Всё верно?`,
+      keyboards.getConfirmationButtons()
+    );
+  }
+
+  /**
+   * Подтверждение и отправка регистрации
+   */
+  async confirmRegistration(bot, query) {
+    const chatId = query.message.chat.id;
+    const state = await this.getUserState(chatId);
+
+    if (!state) {
+      await bot.answerCallbackQuery(query.id, {
+        text: '❌ Сессия истекла. Начните заново.',
+        show_alert: true
+      });
+      return;
+    }
+
+    await bot.answerCallbackQuery(query.id, {
+      text: '⏳ Отправляю данные...'
+    });
+
+    const statusMsg = await bot.sendMessage(
+      chatId,
+      '⏳ Регистрирую клиента на сайте...',
+      keyboards.removeKeyboard()
+    );
+
+    // Отправляем запрос к API
+    const result = await apiService.registerCustomer({
+      name: state.clientName,
+      code: state.clientCode,
+      phone: state.phone,
+      email: state.email
+    });
+
+    // Удаляем сообщение о загрузке
+    try {
+      await bot.deleteMessage(chatId, statusMsg.message_id);
+    } catch (e) {
+      // Игнорируем ошибку если не удалось удалить
+    }
+
+    // Сохраняем историю
+    await database.saveRegistrationHistory(chatId, {
+      clientName: state.clientName,
+      clientCode: state.clientCode,
+      phone: state.phone,
+      email: state.email,
+      apiResponse: result,
+      status: result.success ? 'success' : 'error'
+    });
+
+    // Очищаем состояние
+    await this.clearUserState(chatId);
+
+    if (result.success) {
+      await bot.sendMessage(
+        chatId,
+        `✅ Регистрация успешно завершена!\n\n` +
+        `Клиент ${state.clientName} зарегистрирован на сайте.\n\n` +
+        `Что делаем дальше?`,
+        keyboards.getAfterRegistrationButtons()
+      );
+
+      logger.info(`Клиент ${state.clientName} успешно зарегистрирован пользователем ${chatId}`);
+
+      // Отправляем уведомление в группу
+      await this.sendGroupNotification(bot, chatId, state, result);
+    } else {
+      let errorMsg = `❌ Ошибка регистрации\n\n` +
+        `К сожалению, произошла ошибка:\n` +
+        `${result.error}\n\n`;
+      
+      // Добавляем рекомендации в зависимости от ошибки
+      if (result.error.includes('SSL') || result.error.includes('TLS') || result.error.includes('соединения')) {
+        errorMsg += `🔧 Рекомендации:\n`;
+        errorMsg += `• Проверьте интернет-соединение\n`;
+        errorMsg += `• Попробуйте через несколько минут\n`;
+        errorMsg += `• Возможны технические работы на сервере\n\n`;
+      } else if (result.error.includes('время ожидания')) {
+        errorMsg += `⏱️ Сервер не ответил вовремя. Попробуйте ещё раз.\n\n`;
+      } else if (result.error.includes('авторизации')) {
+        errorMsg += `🔑 Проблема с авторизацией API. Обратитесь к администратору.\n\n`;
+      }
+      
+      errorMsg += `Попробуйте позже или обратитесь к администратору.`;
+
+      await bot.sendMessage(
+        chatId,
+        errorMsg,
+        keyboards.getMainMenu()
+      );
+
+      logger.error(`Ошибка регистрации клиента ${state.clientName}:`, {
+        error: result.error,
+        originalError: result.originalError,
+        status: result.status
+      });
+    }
+  }
+
+  /**
+   * Отмена регистрации
+   */
+  async cancelRegistration(bot, chatId, fromCallback = false) {
+    await this.clearUserState(chatId);
+
+    const message = '❌ Регистрация отменена.\n\nВыберите действие из меню:';
+
+    if (fromCallback) {
+      await bot.sendMessage(
+        chatId,
+        message,
+        keyboards.getMainMenu()
+      );
+    } else {
+      await bot.sendMessage(
+        chatId,
+        message,
+        keyboards.getMainMenu()
+      );
+    }
+
+    logger.info(`Регистрация отменена пользователем ${chatId}`);
+  }
+
+  /**
+   * Показ статистики пользователя
+   */
+  async showUserStats(bot, chatId) {
+    try {
+      const history = await database.getRegistrationHistory(chatId, 10);
+      const stats = await database.getStats();
+
+      let message = `📊 Ваша статистика\n\n`;
+      message += `✅ Успешных регистраций: ${history.filter(h => h.status === 'success').length}\n`;
+      message += `❌ Неудачных попыток: ${history.filter(h => h.status === 'error').length}\n\n`;
+
+      if (history.length > 0) {
+        message += `📋 Последние регистрации:\n\n`;
+        history.slice(0, 5).forEach((record, index) => {
+          const date = new Date(record.created_at);
+          const status = record.status === 'success' ? '✅' : '❌';
+          message += `${status} ${record.client_name}\n`;
+          message += `   📅 ${date.toLocaleString('ru-RU')}\n\n`;
+        });
+      }
+
+      message += `\nВсего пользователей бота: ${stats.total_users}`;
+
+      await bot.sendMessage(
+        chatId,
+        message,
+        keyboards.getMainMenu()
+      );
+    } catch (error) {
+      logger.error('Ошибка получения статистики:', error);
+      await bot.sendMessage(
+        chatId,
+        '❌ Ошибка получения статистики',
+        keyboards.getMainMenu()
+      );
+    }
+  }
+
+  /**
+   * Отправка уведомления в группу о новой регистрации
+   */
+  async sendGroupNotification(bot, chatId, state, result) {
+    try {
+      const groupId = config.notifications.groupId;
+      
+      if (!groupId) {
+        logger.warn('NOTIFICATION_GROUP_ID не настроен в .env');
+        return;
+      }
+
+      // Получаем информацию о пользователе
+      let userName = 'Неизвестен';
+      try {
+        const chat = await bot.getChat(chatId);
+        userName = chat.first_name || chat.username || `ID: ${chatId}`;
+        if (chat.last_name) {
+          userName += ` ${chat.last_name}`;
+        }
+        if (chat.username) {
+          userName += ` (@${chat.username})`;
+        }
+      } catch (e) {
+        logger.warn('Не удалось получить информацию о пользователе:', e.message);
+      }
+
+      // Формируем сообщение для группы
+      const notificationMessage = 
+        `🎉 НОВАЯ РЕГИСТРАЦИЯ НА САЙТЕ\n\n` +
+        `👤 Клиент: ${state.clientName}\n` +
+        `🔢 Код 1С: ${state.clientCode}\n` +
+        `👔 Менеджер: ${state.clientManager || 'Не указан'}\n` +
+        `📱 Телефон: ${state.phone}\n` +
+        `📧 Email: ${state.email}\n\n` +
+        `👨‍💼 Зарегистрировал: ${userName}\n` +
+        `🕐 Время: ${new Date().toLocaleString('ru-RU')}\n` +
+        `✅ Статус: Успешно`;
+
+      await bot.sendMessage(groupId, notificationMessage);
+      
+      logger.info(`Уведомление о регистрации ${state.clientName} отправлено в группу ${groupId}`);
+    } catch (error) {
+      logger.error('Ошибка отправки уведомления в группу:', error.message);
+      // Не прерываем процесс, если не удалось отправить уведомление
+    }
+  }
+}
+
+module.exports = new RegistrationHandler();
+
