@@ -131,6 +131,12 @@ class RegistrationHandler {
       return;
     }
 
+    // Получаем текущее состояние чтобы сохранить флаг withoutApproval
+    const currentState = await this.getUserState(chatId);
+    const withoutApproval = currentState ? currentState.withoutApproval : false;
+
+    logger.info(`Выбор клиента ${client.name} пользователем ${chatId}, withoutApproval: ${withoutApproval}`);
+
     // Сохраняем выбранного клиента
     await this.setUserState(chatId, {
       step: 'awaiting_phone',
@@ -138,7 +144,8 @@ class RegistrationHandler {
       clientCode: client.code,
       clientManager: client.manager,
       phone: null,
-      email: null
+      email: null,
+      withoutApproval: withoutApproval // Сохраняем флаг
     });
 
     await bot.answerCallbackQuery(query.id);
@@ -177,8 +184,14 @@ class RegistrationHandler {
 
     // Обновляем состояние
     const state = await this.getUserState(chatId);
+    if (!state) {
+      await bot.sendMessage(chatId, '❌ Сессия истекла. Начните заново.', keyboards.getCancelButton());
+      return;
+    }
+    
     state.phone = validation.phone;
     state.step = 'awaiting_email';
+    // Сохраняем флаг withoutApproval если он был
     await this.setUserState(chatId, state);
 
     await bot.sendMessage(
@@ -210,10 +223,16 @@ class RegistrationHandler {
 
     // Обновляем состояние
     const state = await this.getUserState(chatId);
+    if (!state) {
+      await bot.sendMessage(chatId, '❌ Сессия истекла. Начните заново.', keyboards.getCancelButton());
+      return;
+    }
+    
     state.email = validation.email;
     
     // Если регистрация без подтверждения - сразу регистрируем
-    if (state.withoutApproval) {
+    if (state.withoutApproval === true) {
+      logger.info(`Регистрация без подтверждения для админа ${chatId}`);
       await this.registerWithoutApproval(bot, chatId, state);
       return;
     }
