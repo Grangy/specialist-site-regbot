@@ -1,6 +1,7 @@
 const database = require('../database/database');
 const clientService = require('../services/clientService');
 const apiService = require('../services/apiService');
+const createLKService = require('../services/createLKService');
 const logger = require('../utils/logger');
 const keyboards = require('../keyboards/keyboards');
 const config = require('../config/config');
@@ -51,7 +52,7 @@ class RegistrationHandler {
   /**
    * Начало поиска клиента
    */
-  async startClientSearch(bot, chatId) {
+  async startClientSearch(bot, chatId, withoutApproval = false) {
     await bot.sendMessage(
       chatId,
       '🔍 Поиск клиента\n\n' +
@@ -67,7 +68,8 @@ class RegistrationHandler {
       clientCode: null,
       clientManager: null,
       phone: null,
-      email: null
+      email: null,
+      withoutApproval: withoutApproval // Флаг для регистрации без подтверждения
     });
   }
 
@@ -209,6 +211,13 @@ class RegistrationHandler {
     // Обновляем состояние
     const state = await this.getUserState(chatId);
     state.email = validation.email;
+    
+    // Если регистрация без подтверждения - сразу регистрируем
+    if (state.withoutApproval) {
+      await this.registerWithoutApproval(bot, chatId, state);
+      return;
+    }
+    
     state.step = 'awaiting_confirmation';
     await this.setUserState(chatId, state);
 
@@ -311,10 +320,11 @@ class RegistrationHandler {
       
       errorMsg += `Попробуйте позже или обратитесь к администратору.`;
 
+      const isAdmin = this.isAdmin(chatId);
       await bot.sendMessage(
         chatId,
         errorMsg,
-        keyboards.getMainMenu()
+        keyboards.getMainMenu(isAdmin)
       );
 
       logger.error(`Ошибка регистрации клиента ${state.clientName}:`, {
@@ -332,18 +342,19 @@ class RegistrationHandler {
     await this.clearUserState(chatId);
 
     const message = '❌ Регистрация отменена.\n\nВыберите действие из меню:';
+    const isAdmin = this.isAdmin(chatId);
 
     if (fromCallback) {
       await bot.sendMessage(
         chatId,
         message,
-        keyboards.getMainMenu()
+        keyboards.getMainMenu(isAdmin)
       );
     } else {
       await bot.sendMessage(
         chatId,
         message,
-        keyboards.getMainMenu()
+        keyboards.getMainMenu(isAdmin)
       );
     }
 
@@ -374,17 +385,19 @@ class RegistrationHandler {
 
       message += `\nВсего пользователей бота: ${stats.total_users}`;
 
+      const isAdmin = this.isAdmin(chatId);
       await bot.sendMessage(
         chatId,
         message,
-        keyboards.getMainMenu()
+        keyboards.getMainMenu(isAdmin)
       );
     } catch (error) {
       logger.error('Ошибка получения статистики:', error);
+      const isAdmin = this.isAdmin(chatId);
       await bot.sendMessage(
         chatId,
         '❌ Ошибка получения статистики',
-        keyboards.getMainMenu()
+        keyboards.getMainMenu(isAdmin)
       );
     }
   }
@@ -456,6 +469,166 @@ class RegistrationHandler {
       logger.error('Ошибка отправки уведомления в группу:', error.message);
       // Не прерываем процесс, если не удалось отправить уведомление
     }
+  }
+
+  /**
+   * Регистрация без подтверждения (для админа)
+   * Сразу создаёт ЛК и отправляет уведомление в группу без кнопок
+   */
+  async registerWithoutApproval(bot, chatId, state) {
+    try {
+      const statusMsg = await bot.sendMessage(
+        chatId,
+        '⏳ Регистрирую клиента и создаю ЛК...',
+        keyboards.removeKeyboard()
+      );
+
+      // 1. Регистрируем клиента
+      const registrationResult = await apiService.registerCustomer({
+        name: state.clientName,
+        code: state.clientCode,
+        phone: state.phone,
+        email: state.email
+      });
+
+      // Удаляем сообщение о загрузке
+      try {
+        await bot.deleteMessage(chatId, statusMsg.message_id);
+      } catch (e) {
+        // Игнорируем ошибку
+      }
+
+      if (!registrationResult.success) {
+        await bot.sendMessage(
+          chatId,
+          `❌ Ошибка регистрации:\n${registrationResult.error}`,
+          keyboards.getMainMenu(config.admin.id === chatId)
+        );
+        return;
+      }
+
+      // 2. Получаем contact_id
+      const contactId = registrationResult.data?.id || registrationResult.data?.contact_id || null;
+
+      if (!contactId) {
+        await bot.sendMessage(
+          chatId,
+          `❌ Ошибка: не удалось получить contact_id из ответа API`,
+          keyboards.getMainMenu(config.admin.id === chatId)
+        );
+        return;
+      }
+
+      // 3. Сразу создаём ЛК
+      const lkResult = await createLKService.createLK(contactId);
+
+      // 4. Сохраняем историю
+      await database.saveRegistrationHistory(chatId, {
+        clientName: state.clientName,
+        clientCode: state.clientCode,
+        phone: state.phone,
+        email: state.email,
+        apiResponse: registrationResult,
+        status: 'success'
+      });
+
+      // 5. Очищаем состояние
+      await this.clearUserState(chatId);
+
+      // 6. Отправляем уведомление в группу БЕЗ кнопок
+      await this.sendGroupNotificationWithoutButtons(bot, chatId, state, registrationResult, lkResult);
+
+      // 7. Уведомляем админа
+      let adminMessage = `✅ Регистрация завершена!\n\n` +
+        `👤 Клиент: ${state.clientName}\n` +
+        `🔢 Код 1С: ${state.clientCode}\n` +
+        `📱 Телефон: ${state.phone}\n` +
+        `📧 Email: ${state.email}\n\n`;
+
+      if (lkResult.success) {
+        adminMessage += `🔑 Личный кабинет создан успешно!\n\n`;
+      } else {
+        adminMessage += `⚠️ ЛК не создан: ${lkResult.error}\n\n`;
+      }
+
+      adminMessage += `Уведомление отправлено в группу.`;
+
+      await bot.sendMessage(
+        chatId,
+        adminMessage,
+        keyboards.getAfterRegistrationButtons()
+      );
+
+      logger.info(`Админ ${chatId} зарегистрировал ${state.clientName} без подтверждения. ЛК: ${lkResult.success ? 'создан' : 'ошибка'}`);
+    } catch (error) {
+      logger.error('Ошибка регистрации без подтверждения:', error);
+      await bot.sendMessage(
+        chatId,
+        `❌ Произошла ошибка: ${error.message}`,
+        keyboards.getMainMenu(config.admin.id === chatId)
+      );
+    }
+  }
+
+  /**
+   * Отправка уведомления в группу БЕЗ кнопок (для админской регистрации)
+   */
+  async sendGroupNotificationWithoutButtons(bot, chatId, state, registrationResult, lkResult) {
+    try {
+      const groupId = config.notifications.groupId;
+      
+      if (!groupId) {
+        logger.warn('NOTIFICATION_GROUP_ID не настроен в .env');
+        return;
+      }
+
+      // Получаем информацию о пользователе
+      let userName = 'Администратор';
+      try {
+        const chat = await bot.getChat(chatId);
+        userName = chat.first_name || chat.username || `ID: ${chatId}`;
+        if (chat.last_name) {
+          userName += ` ${chat.last_name}`;
+        }
+        if (chat.username) {
+          userName += ` (@${chat.username})`;
+        }
+        userName += ' [АДМИН]';
+      } catch (e) {
+        logger.warn('Не удалось получить информацию о пользователе:', e.message);
+      }
+
+      // Формируем сообщение для группы
+      let notificationMessage = 
+        `🎉 НОВАЯ РЕГИСТРАЦИЯ НА САЙТЕ\n\n` +
+        `👤 Клиент: ${state.clientName}\n` +
+        `🔢 Код 1С: ${state.clientCode}\n` +
+        `👔 Менеджер: ${state.clientManager || 'Не указан'}\n` +
+        `📱 Телефон: ${state.phone}\n` +
+        `📧 Email: ${state.email}\n\n` +
+        `👨‍💼 Зарегистрировал: ${userName}\n` +
+        `🕐 Время: ${new Date().toLocaleString('ru-RU')}\n` +
+        `✅ Статус: ПОДТВЕРЖДЕНО И СОЗДАНО`;
+
+      if (lkResult.success) {
+        notificationMessage += `\n🔑 Личный кабинет создан`;
+      } else {
+        notificationMessage += `\n⚠️ ЛК не создан: ${lkResult.error}`;
+      }
+
+      await bot.sendMessage(groupId, notificationMessage);
+      
+      logger.info(`Уведомление о регистрации ${state.clientName} (без подтверждения) отправлено в группу ${groupId}`);
+    } catch (error) {
+      logger.error('Ошибка отправки уведомления в группу:', error.message);
+    }
+  }
+
+  /**
+   * Проверка является ли пользователь админом
+   */
+  isAdmin(chatId) {
+    return config.admin.id && chatId === config.admin.id;
   }
 }
 

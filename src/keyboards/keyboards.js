@@ -5,13 +5,20 @@
 /**
  * Главное меню
  */
-function getMainMenu() {
+function getMainMenu(isAdmin = false) {
+  const keyboard = [
+    ['🔍 Найти клиента']
+  ];
+
+  if (isAdmin) {
+    keyboard.push(['⚡ Рег. без подтверждения']);
+  }
+
+  keyboard.push(['📊 Моя статистика', '❓ Помощь']);
+
   return {
     reply_markup: {
-      keyboard: [
-        ['🔍 Найти клиента'],
-        ['📊 Моя статистика', '❓ Помощь']
-      ],
+      keyboard: keyboard,
       resize_keyboard: true,
       one_time_keyboard: false
     }

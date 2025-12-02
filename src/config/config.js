@@ -17,6 +17,11 @@ module.exports = {
     password: process.env.BOT_PASSWORD || '22170313'
   },
 
+  // Администратор
+  admin: {
+    id: parseInt(process.env.ADMIN_ID) || null
+  },
+
   // Уведомления
   notifications: {
     groupId: process.env.NOTIFICATION_GROUP_ID || null

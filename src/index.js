@@ -24,11 +24,12 @@ bot.onText(/\/start/, async (msg) => {
   if (!isAuthorized) {
     await authHandler.requestPassword(bot, chatId);
   } else {
+    const isAdmin = registrationHandler.isAdmin(chatId);
     await bot.sendMessage(
       chatId,
       `👋 С возвращением, ${msg.from.first_name}!\n\n` +
       'Выберите действие из меню:',
-      keyboards.getMainMenu()
+      keyboards.getMainMenu(isAdmin)
     );
   }
 });
@@ -324,9 +325,19 @@ bot.on('message', async (msg) => {
   const state = await registrationHandler.getUserState(chatId);
 
   try {
+    // Проверка админа
+    const isAdmin = registrationHandler.isAdmin(chatId);
+
     // Обработка кнопок меню
     if (text === '🔍 Найти клиента') {
       await registrationHandler.startClientSearch(bot, chatId);
+    } else if (text === '⚡ Рег. без подтверждения' || text === '⚡ Регистрация без подтверждения') {
+      // Только для админа
+      if (isAdmin) {
+        await registrationHandler.startClientSearch(bot, chatId, true); // true = без подтверждения
+      } else {
+        await bot.sendMessage(chatId, '❌ У вас нет прав для этой операции.');
+      }
     } else if (text === '📊 Моя статистика') {
       await registrationHandler.showUserStats(bot, chatId);
     } else if (text === '❓ Помощь') {
@@ -351,19 +362,21 @@ bot.on('message', async (msg) => {
       }
     } else {
       // Если нет активного состояния - показываем меню
+      const isAdmin = registrationHandler.isAdmin(chatId);
       await bot.sendMessage(
         chatId,
         '🤔 Не понимаю. Выберите действие из меню:',
-        keyboards.getMainMenu()
+        keyboards.getMainMenu(isAdmin)
       );
     }
   } catch (error) {
     logger.error('Ошибка обработки сообщения:', error);
-    await bot.sendMessage(
-      chatId,
-      '❌ Произошла ошибка. Попробуйте позже.',
-      keyboards.getMainMenu()
-    );
+      const isAdmin = registrationHandler.isAdmin(chatId);
+      await bot.sendMessage(
+        chatId,
+        '❌ Произошла ошибка. Попробуйте позже.',
+        keyboards.getMainMenu(isAdmin)
+      );
   }
 });
 
