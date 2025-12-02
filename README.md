@@ -97,6 +97,9 @@ nano .env
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 BOT_PASSWORD=your_password_here
 
+# Admin (ID администратора для регистрации без подтверждения)
+ADMIN_ID=your_admin_telegram_id_here
+
 # Notifications (ID группы для уведомлений о регистрациях)
 NOTIFICATION_GROUP_ID=-1003421862306
 
