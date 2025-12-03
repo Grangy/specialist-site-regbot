@@ -14,9 +14,9 @@ class CreateLKService {
   /**
    * Создание ЛК для клиента
    */
-  async createLK(contactId) {
+  async createLK(contactId, categoryId = null) {
     try {
-      logger.info(`Отправка запроса на создание ЛК для contact_id: ${contactId}`);
+      logger.info(`Отправка запроса на создание ЛК для contact_id: ${contactId}, category_id: ${categoryId || 'не указан'}`);
 
       if (!this.token) {
         throw new Error('CREATE_LK_API_TOKEN не настроен в .env');
@@ -30,6 +30,12 @@ class CreateLKService {
       const formData = new URLSearchParams();
       formData.append('token', this.token);
       formData.append('contact_id', contactId);
+      
+      // Если указана категория (Прайс 1), передаём её
+      if (categoryId) {
+        formData.append('category_id', categoryId);
+        logger.info(`Передаётся category_id: ${categoryId}`);
+      }
 
       // Отправляем POST запрос
       const response = await axios.post(

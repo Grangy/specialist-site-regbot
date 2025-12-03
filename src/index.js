@@ -208,8 +208,12 @@ async function handleApproveRegistration(bot, query) {
       text: '⏳ Создаю ЛК...'
     });
 
-    // Отправляем запрос на создание ЛК
-    const result = await createLKService.createLK(contactId);
+      // Получаем информацию о клиенте для category_id
+      const clientInfo = await database.getClientByContactId(contactId);
+      const categoryId = clientInfo && clientInfo.price_list === 'Прайс 1 (+1.5%)' ? '4' : null;
+      
+      // Отправляем запрос на создание ЛК
+      const result = await createLKService.createLK(contactId, categoryId);
 
     if (result.success) {
       // Обновляем сообщение - убираем кнопки, добавляем статус

@@ -12,6 +12,7 @@
     "test-api": "node scripts/testApi.js",
     "stats": "node scripts/stats.js",
     "clean-db": "node scripts/cleanDatabase.js",
+    "update-server": "node scripts/updateCreateLKApi.js",
     "pm2:start": "pm2 start ecosystem.config.js --env production",
     "pm2:stop": "pm2 stop telegram-bot",
     "pm2:restart": "pm2 restart telegram-bot",
@@ -30,6 +31,7 @@
     "axios": "^1.6.2",
     "dotenv": "^16.3.1",
     "fuse.js": "^7.0.0",
+    "node-ssh": "^13.2.1",
     "node-telegram-bot-api": "^0.64.0",
     "sqlite3": "^5.1.6",
     "winston": "^3.11.0",
@@ -39,4 +41,3 @@
     "nodemon": "^3.0.2"
   }
 }
-

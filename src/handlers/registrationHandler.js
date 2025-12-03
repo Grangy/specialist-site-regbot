@@ -590,8 +590,9 @@ class RegistrationHandler {
         return;
       }
 
-      // 3. Сразу создаём ЛК
-      const lkResult = await createLKService.createLK(contactId);
+      // 3. Сразу создаём ЛК (передаём category_id если был выбран Прайс 1)
+      const categoryId = state.priceList === 4 ? '4' : null;
+      const lkResult = await createLKService.createLK(contactId, categoryId);
 
       // 4. Сохраняем историю
       await database.saveRegistrationHistory(chatId, {
