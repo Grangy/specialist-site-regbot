@@ -46,6 +46,8 @@ scripts/
 !scripts/cleanDatabase.js
 !scripts/updateCreateLKApi.js
 !scripts/serverConnection.js
+!scripts/getAllCustomersApi.php
+!scripts/uploadCustomersApi.js
 
 # Production
 *.pid
