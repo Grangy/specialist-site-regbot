@@ -154,13 +154,40 @@ bot.on('callback_query', async (query) => {
       await registrationHandler.handlePriceListSelection(bot, query);
     } else if (data.startsWith('clients_page_')) {
       // Пагинация списка клиентов
-      const page = parseInt(data.split('_')[2]);
+      const parts = data.split('_');
+      const page = parseInt(parts[2]);
+      let search = '';
+      
+      // Проверяем, есть ли поисковый запрос
+      if (data.includes('_search_')) {
+        const searchIndex = data.indexOf('_search_');
+        search = decodeURIComponent(data.substring(searchIndex + 8));
+      }
+      
       await bot.answerCallbackQuery(query.id);
-      await adminHandler.showClientsList(bot, chatId, page);
-    } else if (data === 'clients_refresh') {
-      // Обновление списка клиентов
+      await adminHandler.showClientsList(bot, chatId, page, search);
+    } else if (data === 'admin_search_clients') {
+      // Запуск поиска клиентов для админа (отдельная кнопка)
+      await bot.answerCallbackQuery(query.id);
+      await adminHandler.startClientSearch(bot, chatId);
+    } else if (data === 'clients_search_start') {
+      // Запуск поиска внутри списка клиентов
+      await bot.answerCallbackQuery(query.id);
+      await adminHandler.startClientsListSearch(bot, chatId);
+    } else if (data === 'clients_clear_search') {
+      // Очистка поиска и возврат к полному списку
+      await bot.answerCallbackQuery(query.id, { text: '🔄 Показываю всех клиентов...' });
+      await adminHandler.showClientsList(bot, chatId, 0, '');
+    } else if (data.startsWith('clients_refresh')) {
+      // Обновление списка клиентов (с сохранением поиска если есть)
       await bot.answerCallbackQuery(query.id, { text: '🔄 Обновляю...' });
-      await adminHandler.showClientsList(bot, chatId, 0);
+      if (data.includes('_search_')) {
+        const searchIndex = data.indexOf('_search_');
+        const search = decodeURIComponent(data.substring(searchIndex + 8));
+        await adminHandler.showClientsList(bot, chatId, 0, search);
+      } else {
+        await adminHandler.showClientsList(bot, chatId, 0);
+      }
     } else if (data === 'clients_back') {
       // Назад в меню
       await bot.answerCallbackQuery(query.id);
@@ -387,6 +414,13 @@ bot.on('message', async (msg) => {
       } else {
         await bot.sendMessage(chatId, '❌ У вас нет прав для этой операции.');
       }
+    } else if (text === '🔍 Поиск клиентов') {
+      // Только для админа
+      if (registrationHandler.isAdmin(chatId)) {
+        await adminHandler.startClientSearch(bot, chatId);
+      } else {
+        await bot.sendMessage(chatId, '❌ У вас нет прав для этой операции.');
+      }
     } else if (text === '📊 Моя статистика') {
       await registrationHandler.showUserStats(bot, chatId);
     } else if (text === '❓ Помощь') {
@@ -409,6 +443,12 @@ bot.on('message', async (msg) => {
           'Пожалуйста, выберите прайс-лист из кнопок выше ⬆️',
           keyboards.getPriceListButtons()
         );
+      } else if (state.step === 'admin_searching_clients') {
+        // Поиск клиентов для админа (отдельная кнопка)
+        await adminHandler.handleClientSearch(bot, msg);
+      } else if (state.step === 'clients_list_searching') {
+        // Поиск внутри списка клиентов
+        await adminHandler.handleClientsListSearch(bot, msg);
       } else {
         await bot.sendMessage(
           chatId,

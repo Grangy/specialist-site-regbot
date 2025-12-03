@@ -39,6 +39,12 @@ module.exports = {
     token: process.env.RESET_PASSWORD_API_TOKEN || ''
   },
 
+  // Customers API (для получения всех клиентов из БД сайта)
+  customersApi: {
+    url: process.env.CUSTOMERS_API_URL || 'https://specialist82.pro/getAllCustomersApi.php',
+    token: process.env.CUSTOMERS_API_TOKEN || 'SUPER_SECRET_TOKEN_123'
+  },
+
   // API
   api: {
     url: process.env.API_URL || 'https://specialist82.pro/api.php/shop.customer.add',
