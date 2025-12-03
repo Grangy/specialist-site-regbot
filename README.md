@@ -230,9 +230,32 @@ Headers:
 Body:
   token=SUPER_SECRET_TOKEN_123
   contact_id=ID созданного контакта из первого запроса
+  category_id=4 (опционально, если выбран "Прайс 1 (+1.5%)")
 ```
 
+**Категории:**
+- `category_id=2` (по умолчанию) - "Цены видны"
+- `category_id=4` - "Цена Прайс лист1" (если выбран в боте)
+
 Этот запрос отправляется автоматически при нажатии кнопки "Подтвердить" в группе.
+
+### 3. Сброс пароля (для админа)
+
+POST запрос к `reset_password_api.php`:
+
+```bash
+POST https://specialist82.pro/reset_password_api.php
+
+Headers:
+  Content-Type: application/x-www-form-urlencoded
+
+Body:
+  token=SUPER_SECRET_TOKEN_123
+  contact_id=ID клиента
+  email=email@example.com (опционально)
+```
+
+Новый пароль отправляется на email клиента автоматически.
 
 ## База данных
 
