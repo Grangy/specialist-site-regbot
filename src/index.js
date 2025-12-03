@@ -390,14 +390,44 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // Получаем текущее состояние пользователя
+  // Получаем текущее состояние пользователя (из registrationHandler и adminHandler)
   const state = await registrationHandler.getUserState(chatId);
+  const adminState = await adminHandler.getUserState(chatId);
 
   try {
     // Проверка админа
     const isAdmin = registrationHandler.isAdmin(chatId);
 
-    // Обработка кнопок меню
+    // СНАЧАЛА проверяем состояния (поиск, регистрация и т.д.)
+    // Это важно, чтобы текст ввода обрабатывался правильно
+    if (adminState && adminState.step === 'clients_list_searching') {
+      // Поиск внутри списка клиентов
+      await adminHandler.handleClientsListSearch(bot, msg);
+      return;
+    } else if (adminState && adminState.step === 'admin_searching_clients') {
+      // Поиск клиентов для админа (отдельная кнопка)
+      await adminHandler.handleClientSearch(bot, msg);
+      return;
+    } else if (state && state.step === 'awaiting_client_name') {
+      await registrationHandler.handleClientNameInput(bot, msg);
+      return;
+    } else if (state && state.step === 'awaiting_phone') {
+      await registrationHandler.handlePhoneInput(bot, msg);
+      return;
+    } else if (state && state.step === 'awaiting_email') {
+      await registrationHandler.handleEmailInput(bot, msg);
+      return;
+    } else if (state && state.step === 'awaiting_price_list') {
+      // Прайс-лист выбирается через inline-кнопки, не через текст
+      await bot.sendMessage(
+        chatId,
+        'Пожалуйста, выберите прайс-лист из кнопок выше ⬆️',
+        keyboards.getPriceListButtons()
+      );
+      return;
+    }
+
+    // ЗАТЕМ обрабатываем кнопки меню
     if (text === '🔍 Найти клиента') {
       await registrationHandler.startClientSearch(bot, chatId);
     } else if (text === '⚡ Рег. без подтверждения' || text === '⚡ Регистрация без подтверждения') {
@@ -427,36 +457,30 @@ bot.on('message', async (msg) => {
       bot.emit('message', { ...msg, text: '/help' });
     } else if (text === '⬅️ Назад в меню' || text === '❌ Отменить регистрацию') {
       await registrationHandler.cancelRegistration(bot, chatId);
-    }
-    // Обработка состояний регистрации
-    else if (state) {
-      if (state.step === 'awaiting_client_name') {
-        await registrationHandler.handleClientNameInput(bot, msg);
-      } else if (state.step === 'awaiting_phone') {
-        await registrationHandler.handlePhoneInput(bot, msg);
-      } else if (state.step === 'awaiting_email') {
-        await registrationHandler.handleEmailInput(bot, msg);
-      } else if (state.step === 'awaiting_price_list') {
-        // Прайс-лист выбирается через inline-кнопки, не через текст
-        await bot.sendMessage(
-          chatId,
-          'Пожалуйста, выберите прайс-лист из кнопок выше ⬆️',
-          keyboards.getPriceListButtons()
-        );
-      } else if (state.step === 'admin_searching_clients') {
-        // Поиск клиентов для админа (отдельная кнопка)
-        await adminHandler.handleClientSearch(bot, msg);
-      } else if (state.step === 'clients_list_searching') {
+    } else {
+      // Сначала проверяем админские состояния
+      if (adminState && adminState.step === 'clients_list_searching') {
         // Поиск внутри списка клиентов
         await adminHandler.handleClientsListSearch(bot, msg);
-      } else {
-        await bot.sendMessage(
-          chatId,
-          '🤔 Не понимаю. Используйте меню или /help для справки.',
-          keyboards.getMainMenu()
-        );
-      }
-    } else {
+      } else if (adminState && adminState.step === 'admin_searching_clients') {
+        // Поиск клиентов для админа (отдельная кнопка)
+        await adminHandler.handleClientSearch(bot, msg);
+      } 
+      // Затем проверяем состояния регистрации
+      else if (state && state.step === 'awaiting_client_name') {
+        await registrationHandler.handleClientNameInput(bot, msg);
+      } else if (state && state.step === 'awaiting_phone') {
+        await registrationHandler.handlePhoneInput(bot, msg);
+      } else if (state && state.step === 'awaiting_email') {
+        await registrationHandler.handleEmailInput(bot, msg);
+      // Если дошли сюда - текст не распознан
+      const isAdmin = registrationHandler.isAdmin(chatId);
+      await bot.sendMessage(
+        chatId,
+        '🤔 Не понимаю. Используйте меню или /help для справки.',
+        keyboards.getMainMenu(isAdmin)
+      );
+    }
       // Если нет активного состояния - показываем меню
       const isAdmin = registrationHandler.isAdmin(chatId);
       await bot.sendMessage(
