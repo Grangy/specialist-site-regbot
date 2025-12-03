@@ -402,7 +402,13 @@ bot.on('message', async (msg) => {
     // Проверка админа
     const isAdmin = registrationHandler.isAdmin(chatId);
 
-    // СНАЧАЛА проверяем состояния (поиск, регистрация и т.д.)
+    // СНАЧАЛА проверяем специальные кнопки, которые должны работать в любом состоянии
+    if (text === '❌ Отменить регистрацию' || text === '⬅️ Назад в меню') {
+      await registrationHandler.cancelRegistration(bot, chatId);
+      return;
+    }
+
+    // ЗАТЕМ проверяем состояния (поиск, регистрация и т.д.)
     // Это важно, чтобы текст ввода обрабатывался правильно
     if (adminState && adminState.step === 'clients_list_searching') {
       // Поиск внутри списка клиентов
@@ -459,8 +465,6 @@ bot.on('message', async (msg) => {
       await registrationHandler.showUserStats(bot, chatId);
     } else if (text === '❓ Помощь') {
       bot.emit('message', { ...msg, text: '/help' });
-    } else if (text === '⬅️ Назад в меню' || text === '❌ Отменить регистрацию') {
-      await registrationHandler.cancelRegistration(bot, chatId);
     } else {
       // Сначала проверяем админские состояния
       if (adminState && adminState.step === 'clients_list_searching') {
