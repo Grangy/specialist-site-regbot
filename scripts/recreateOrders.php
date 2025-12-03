@@ -58,9 +58,18 @@ try {
     require_once($path);
 
     $config = new SystemConfig();
-    waSystem::getInstance('shop', $config);
+    $wa = waSystem::getInstance('shop', $config);
 
     // === Модели ===
+    // В Webasyst модели находятся в wa-apps/shop/lib/model/
+    // Подключаем интерфейс и модели в правильном порядке
+    $modelPath = dirname(__FILE__) . '/wa-apps/shop/lib/model/';
+    require_once($modelPath . 'shopOrderStorage.interface.php');
+    require_once($modelPath . 'shopOrder.model.php');
+    require_once($modelPath . 'shopOrderParams.model.php');
+    require_once($modelPath . 'shopOrderItems.model.php');
+    
+    // Создаём экземпляры моделей
     $orderModel = new shopOrderModel();
     $orderParamsModel = new shopOrderParamsModel();
     $orderItemsModel = new shopOrderItemsModel();
@@ -72,7 +81,8 @@ try {
         logMessage("Processing order {$orderId}");
 
         // === Загружаем оригинальный заказ ===
-        $originalOrder = $orderModel->getOrder($orderId);
+        // Используем getById вместо getOrder, чтобы избежать зависимостей
+        $originalOrder = $orderModel->getById($orderId);
         
         if (!$originalOrder) {
             logMessage("Order {$orderId} not found");
