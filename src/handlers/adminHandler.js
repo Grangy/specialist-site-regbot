@@ -43,8 +43,7 @@ class AdminHandler {
         message += `   📧 ${client.email || 'Не указан'}\n`;
         message += `   📱 ${client.phone || 'Не указан'}\n`;
         message += `   🔢 ${client.client_code || 'Не указан'}${priceList}\n`;
-        message += `   📅 ${date.toLocaleString('ru-RU')}\n`;
-        message += `   [Действия](callback:client_${client.contact_id})\n\n`;
+        message += `   📅 ${date.toLocaleString('ru-RU')}\n\n`;
       });
 
       // Создаём inline-кнопки для каждого клиента
