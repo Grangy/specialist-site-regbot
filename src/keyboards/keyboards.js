@@ -112,6 +112,24 @@ function getAfterRegistrationButtons() {
 }
 
 /**
+ * Inline кнопки для выбора прайс-листа
+ */
+function getPriceListButtons() {
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: '📋 Прайс', callback_data: 'price_list_default' }
+        ],
+        [
+          { text: '📋 Прайс 1 (+1.5%)', callback_data: 'price_list_1' }
+        ]
+      ]
+    }
+  };
+}
+
+/**
  * Удаление клавиатуры
  */
 function removeKeyboard() {
@@ -129,6 +147,7 @@ module.exports = {
   getClientSelectionButtons,
   getConfirmationButtons,
   getAfterRegistrationButtons,
+  getPriceListButtons,
   removeKeyboard
 };
 

@@ -30,6 +30,12 @@ class ApiService {
       formData.append('data[phone][0][value]', data.phone);
       formData.append('data[phone][0][ext]', 'mobile');
       formData.append('data[kodv1s]', data.code);
+      
+      // Если выбран прайс-лист 1, добавляем category_id
+      if (data.priceList && data.priceList === 4) {
+        formData.append('data[category_id]', '4');
+        logger.info('Добавлена категория 4 (Прайс 1 +1.5%)');
+      }
 
       // Отправляем POST запрос
       const response = await axios.post(

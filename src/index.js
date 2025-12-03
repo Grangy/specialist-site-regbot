@@ -148,6 +148,9 @@ bot.on('callback_query', async (query) => {
     } else if (data.startsWith('reject_reg_')) {
       // Отказ в регистрации из группы
       await handleRejectRegistration(bot, query);
+    } else if (data.startsWith('price_list_')) {
+      // Выбор прайс-листа
+      await registrationHandler.handlePriceListSelection(bot, query);
     } else {
       await bot.answerCallbackQuery(query.id, {
         text: '❌ Неизвестная команда'
@@ -353,6 +356,13 @@ bot.on('message', async (msg) => {
         await registrationHandler.handlePhoneInput(bot, msg);
       } else if (state.step === 'awaiting_email') {
         await registrationHandler.handleEmailInput(bot, msg);
+      } else if (state.step === 'awaiting_price_list') {
+        // Прайс-лист выбирается через inline-кнопки, не через текст
+        await bot.sendMessage(
+          chatId,
+          'Пожалуйста, выберите прайс-лист из кнопок выше ⬆️',
+          keyboards.getPriceListButtons()
+        );
       } else {
         await bot.sendMessage(
           chatId,

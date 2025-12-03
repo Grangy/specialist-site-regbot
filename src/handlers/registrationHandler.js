@@ -145,6 +145,7 @@ class RegistrationHandler {
       clientManager: client.manager,
       phone: null,
       email: null,
+      priceList: null, // Прайс-лист
       withoutApproval: withoutApproval // Сохраняем флаг
     });
 
@@ -229,18 +230,64 @@ class RegistrationHandler {
     }
     
     state.email = validation.email;
+    state.step = 'awaiting_price_list';
+    await this.setUserState(chatId, state);
+
+    // Показываем выбор прайс-листа
+    await bot.sendMessage(
+      chatId,
+      `✅ Email сохранен: ${validation.email}\n\n` +
+      `📋 Выберите прайс-лист для клиента:`,
+      keyboards.getPriceListButtons()
+    );
+  }
+
+  /**
+   * Обработка выбора прайс-листа
+   */
+  async handlePriceListSelection(bot, query) {
+    const chatId = query.message.chat.id;
+    const data = query.data;
+
+    const state = await this.getUserState(chatId);
+    if (!state) {
+      await bot.answerCallbackQuery(query.id, {
+        text: '❌ Сессия истекла. Начните заново.',
+        show_alert: true
+      });
+      return;
+    }
+
+    // Определяем выбранный прайс-лист
+    let priceList = null;
+    let priceListName = 'Прайс';
     
+    if (data === 'price_list_1') {
+      priceList = 4; // ID категории "Цена Прайс лист1"
+      priceListName = 'Прайс 1 (+1.5%)';
+    } else {
+      priceList = null; // Обычный прайс без категории
+      priceListName = 'Прайс';
+    }
+
+    state.priceList = priceList;
+    state.priceListName = priceListName;
+
+    await bot.answerCallbackQuery(query.id, {
+      text: `Выбран: ${priceListName}`
+    });
+
     // Если регистрация без подтверждения - сразу регистрируем
     if (state.withoutApproval === true) {
       logger.info(`Регистрация без подтверждения для админа ${chatId}`);
       await this.registerWithoutApproval(bot, chatId, state);
       return;
     }
-    
+
+    // Иначе показываем сводку для подтверждения
     state.step = 'awaiting_confirmation';
     await this.setUserState(chatId, state);
 
-    // Показываем сводку для подтверждения
     await bot.sendMessage(
       chatId,
       `📋 Проверьте данные перед регистрацией:\n\n` +
@@ -248,7 +295,8 @@ class RegistrationHandler {
       `🔢 Код 1С: ${state.clientCode}\n` +
       `👔 Менеджер: ${state.clientManager || 'Не указан'}\n` +
       `📱 Телефон: ${state.phone}\n` +
-      `📧 Email: ${state.email}\n\n` +
+      `📧 Email: ${state.email}\n` +
+      `📋 Прайс-лист: ${priceListName}\n\n` +
       `Всё верно?`,
       keyboards.getConfirmationButtons()
     );
@@ -284,7 +332,8 @@ class RegistrationHandler {
       name: state.clientName,
       code: state.clientCode,
       phone: state.phone,
-      email: state.email
+      email: state.email,
+      priceList: state.priceList || null
     });
 
     // Удаляем сообщение о загрузке
@@ -452,13 +501,14 @@ class RegistrationHandler {
       const contactId = result.data?.id || result.data?.contact_id || null;
 
       // Формируем сообщение для группы
+      const priceListInfo = state.priceListName ? `\n📋 Прайс-лист: ${state.priceListName}` : '';
       const notificationMessage = 
         `🎉 НОВАЯ РЕГИСТРАЦИЯ НА САЙТЕ\n\n` +
         `👤 Клиент: ${state.clientName}\n` +
         `🔢 Код 1С: ${state.clientCode}\n` +
         `👔 Менеджер: ${state.clientManager || 'Не указан'}\n` +
         `📱 Телефон: ${state.phone}\n` +
-        `📧 Email: ${state.email}\n\n` +
+        `📧 Email: ${state.email}${priceListInfo}\n\n` +
         `👨‍💼 Зарегистрировал: ${userName}\n` +
         `🕐 Время: ${new Date().toLocaleString('ru-RU')}\n` +
         `✅ Статус: Ожидает подтверждения`;
@@ -507,7 +557,8 @@ class RegistrationHandler {
         name: state.clientName,
         code: state.clientCode,
         phone: state.phone,
-        email: state.email
+        email: state.email,
+        priceList: state.priceList || null
       });
 
       // Удаляем сообщение о загрузке
@@ -558,11 +609,12 @@ class RegistrationHandler {
       await this.sendGroupNotificationWithoutButtons(bot, chatId, state, registrationResult, lkResult);
 
       // 7. Уведомляем админа
+      const priceListInfo = state.priceListName ? `\n📋 Прайс-лист: ${state.priceListName}` : '';
       let adminMessage = `✅ Регистрация завершена!\n\n` +
         `👤 Клиент: ${state.clientName}\n` +
         `🔢 Код 1С: ${state.clientCode}\n` +
         `📱 Телефон: ${state.phone}\n` +
-        `📧 Email: ${state.email}\n\n`;
+        `📧 Email: ${state.email}${priceListInfo}\n\n`;
 
       if (lkResult.success) {
         adminMessage += `🔑 Личный кабинет создан успешно!\n\n`;
@@ -618,13 +670,14 @@ class RegistrationHandler {
       }
 
       // Формируем сообщение для группы
+      const priceListInfo = state.priceListName ? `\n📋 Прайс-лист: ${state.priceListName}` : '';
       let notificationMessage = 
         `🎉 НОВАЯ РЕГИСТРАЦИЯ НА САЙТЕ\n\n` +
         `👤 Клиент: ${state.clientName}\n` +
         `🔢 Код 1С: ${state.clientCode}\n` +
         `👔 Менеджер: ${state.clientManager || 'Не указан'}\n` +
         `📱 Телефон: ${state.phone}\n` +
-        `📧 Email: ${state.email}\n\n` +
+        `📧 Email: ${state.email}${priceListInfo}\n\n` +
         `👨‍💼 Зарегистрировал: ${userName}\n` +
         `🕐 Время: ${new Date().toLocaleString('ru-RU')}\n` +
         `✅ Статус: ПОДТВЕРЖДЕНО И СОЗДАНО`;
