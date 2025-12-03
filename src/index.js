@@ -203,23 +203,27 @@ async function handleApproveRegistration(bot, query) {
     const parts = data.split('_');
     const contactId = parts[2];
     const userChatId = parts[3];
-    const categoryId = parts[4] || null; // category_id передаётся в callback_data
+    const priceCategoryId = parts[4] || null; // category_id для прайс-листа (4 если Прайс 1, иначе null)
 
     await bot.answerCallbackQuery(query.id, {
       text: '⏳ Создаю ЛК...'
     });
 
     // Если category_id не передан в callback, пытаемся получить из БД
-    let finalCategoryId = categoryId;
-    if (!finalCategoryId) {
+    let finalPriceCategoryId = priceCategoryId === '0' ? null : priceCategoryId;
+    if (!finalPriceCategoryId || finalPriceCategoryId === '0') {
       const clientInfo = await database.getClientByContactId(contactId);
       if (clientInfo && clientInfo.price_list === 'Прайс 1 (+1.5%)') {
-        finalCategoryId = '4';
+        finalPriceCategoryId = '4';
+      } else {
+        finalPriceCategoryId = null; // Обычный прайс - только категория 2 будет добавлена на сервере
       }
     }
     
     // Отправляем запрос на создание ЛК
-    const result = await createLKService.createLK(contactId, finalCategoryId);
+    // На сервере автоматически добавится категория 2 ("Цены видны") для ВСЕХ
+    // Если finalPriceCategoryId = 4, дополнительно добавится категория 4 ("Цена Прайс лист1")
+    const result = await createLKService.createLK(contactId, finalPriceCategoryId);
 
     if (result.success) {
       // Обновляем сообщение - убираем кнопки, добавляем статус

@@ -515,14 +515,15 @@ class RegistrationHandler {
         `✅ Статус: Ожидает подтверждения`;
 
       // Inline кнопки для подтверждения/отказа
-      // Передаём category_id в callback_data для правильной установки категории
-      const categoryIdForCallback = state.priceList === 4 ? '4' : '2';
+      // Передаём category_id в callback_data (4 если Прайс 1, иначе null)
+      // На сервере автоматически добавится категория 2 ("Цены видны") для всех
+      const priceCategoryIdForCallback = state.priceList === 4 ? '4' : '0';
       const keyboard = {
         inline_keyboard: [
           [
             {
               text: '✅ Подтвердить',
-              callback_data: `approve_reg_${contactId}_${chatId}_${categoryIdForCallback}`
+              callback_data: `approve_reg_${contactId}_${chatId}_${priceCategoryIdForCallback}`
             },
             {
               text: '❌ Отказать',
@@ -592,9 +593,11 @@ class RegistrationHandler {
         return;
       }
 
-      // 3. Сразу создаём ЛК (передаём category_id если был выбран Прайс 1)
-      const categoryId = state.priceList === 4 ? '4' : null;
-      const lkResult = await createLKService.createLK(contactId, categoryId);
+      // 3. Сразу создаём ЛК
+      // На сервере автоматически добавится категория 2 ("Цены видны")
+      // Если выбран Прайс 1, передаём category_id=4 для дополнительной категории
+      const priceCategoryId = state.priceList === 4 ? '4' : null;
+      const lkResult = await createLKService.createLK(contactId, priceCategoryId);
 
       // 4. Сохраняем историю
       await database.saveRegistrationHistory(chatId, {
