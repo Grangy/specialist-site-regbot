@@ -36,6 +36,17 @@ Thumbs.db
 tmp/
 temp/
 
+# Scripts (игнорируем все, кроме критичных для работы бота)
+scripts/
+# Но оставляем критичные скрипты, используемые в package.json
+!scripts/convertExcel.js
+!scripts/checkSetup.js
+!scripts/testApi.js
+!scripts/stats.js
+!scripts/cleanDatabase.js
+!scripts/updateCreateLKApi.js
+!scripts/serverConnection.js
+
 # Production
 *.pid
 *.seed
