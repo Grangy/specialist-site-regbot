@@ -33,6 +33,12 @@ module.exports = {
     token: process.env.CREATE_LK_API_TOKEN || ''
   },
 
+  // Reset Password API
+  resetPassword: {
+    url: process.env.RESET_PASSWORD_API_URL || 'https://specialist82.pro/reset_password_api.php',
+    token: process.env.RESET_PASSWORD_API_TOKEN || ''
+  },
+
   // API
   api: {
     url: process.env.API_URL || 'https://specialist82.pro/api.php/shop.customer.add',

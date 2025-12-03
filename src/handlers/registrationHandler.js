@@ -349,6 +349,7 @@ class RegistrationHandler {
       clientCode: state.clientCode,
       phone: state.phone,
       email: state.email,
+      priceListName: state.priceListName || null,
       apiResponse: result,
       status: result.success ? 'success' : 'error'
     });
@@ -598,6 +599,7 @@ class RegistrationHandler {
         clientCode: state.clientCode,
         phone: state.phone,
         email: state.email,
+        priceListName: state.priceListName || null,
         apiResponse: registrationResult,
         status: 'success'
       });

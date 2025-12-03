@@ -4,6 +4,7 @@ const logger = require('./utils/logger');
 const database = require('./database/database');
 const authHandler = require('./handlers/authHandler');
 const registrationHandler = require('./handlers/registrationHandler');
+const adminHandler = require('./handlers/adminHandler');
 const keyboards = require('./keyboards/keyboards');
 const createLKService = require('./services/createLKService');
 
@@ -151,6 +152,30 @@ bot.on('callback_query', async (query) => {
     } else if (data.startsWith('price_list_')) {
       // Выбор прайс-листа
       await registrationHandler.handlePriceListSelection(bot, query);
+    } else if (data.startsWith('clients_page_')) {
+      // Пагинация списка клиентов
+      const page = parseInt(data.split('_')[2]);
+      await bot.answerCallbackQuery(query.id);
+      await adminHandler.showClientsList(bot, chatId, page);
+    } else if (data === 'clients_refresh') {
+      // Обновление списка клиентов
+      await bot.answerCallbackQuery(query.id, { text: '🔄 Обновляю...' });
+      await adminHandler.showClientsList(bot, chatId, 0);
+    } else if (data === 'clients_back') {
+      // Назад в меню
+      await bot.answerCallbackQuery(query.id);
+      const isAdmin = registrationHandler.isAdmin(chatId);
+      await bot.sendMessage(
+        chatId,
+        'Выберите действие из меню:',
+        keyboards.getMainMenu(isAdmin)
+      );
+    } else if (data.startsWith('client_info_')) {
+      // Информация о клиенте
+      await adminHandler.showClientInfo(bot, query);
+    } else if (data.startsWith('reset_password_')) {
+      // Сброс пароля
+      await adminHandler.resetClientPassword(bot, query);
     } else {
       await bot.answerCallbackQuery(query.id, {
         text: '❌ Неизвестная команда'
@@ -338,6 +363,13 @@ bot.on('message', async (msg) => {
       // Только для админа
       if (isAdmin) {
         await registrationHandler.startClientSearch(bot, chatId, true); // true = без подтверждения
+      } else {
+        await bot.sendMessage(chatId, '❌ У вас нет прав для этой операции.');
+      }
+    } else if (text === '👥 Список клиентов') {
+      // Только для админа
+      if (registrationHandler.isAdmin(chatId)) {
+        await adminHandler.showClientsList(bot, chatId, 0);
       } else {
         await bot.sendMessage(chatId, '❌ У вас нет прав для этой операции.');
       }

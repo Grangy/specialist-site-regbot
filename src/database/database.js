@@ -68,12 +68,18 @@ class Database {
           client_code TEXT,
           phone TEXT,
           email TEXT,
+          contact_id TEXT,
+          price_list TEXT,
           api_response TEXT,
           status TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (chat_id) REFERENCES users(chat_id)
         )
       `);
+
+      // Добавляем колонки если их нет (для миграции)
+      this.db.run(`ALTER TABLE registration_history ADD COLUMN contact_id TEXT`, () => {});
+      this.db.run(`ALTER TABLE registration_history ADD COLUMN price_list TEXT`, () => {});
 
       logger.info('Таблицы инициализированы');
     });
@@ -219,22 +225,91 @@ class Database {
    */
   saveRegistrationHistory(chatId, data) {
     return new Promise((resolve, reject) => {
+      const apiResponse = data.apiResponse || {};
+      const contactId = apiResponse.data?.id || apiResponse.data?.contact_id || data.contactId || null;
+      
       this.db.run(
         `INSERT INTO registration_history 
-         (chat_id, client_name, client_code, phone, email, api_response, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (chat_id, client_name, client_code, phone, email, contact_id, price_list, api_response, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           chatId,
           data.clientName,
           data.clientCode,
           data.phone,
           data.email,
+          contactId,
+          data.priceListName || null,
           JSON.stringify(data.apiResponse),
           data.status
         ],
         (err) => {
           if (err) reject(err);
           else resolve();
+        }
+      );
+    });
+  }
+
+  /**
+   * Получение всех успешно зарегистрированных клиентов
+   */
+  getAllRegisteredClients(limit = 100, offset = 0) {
+    return new Promise((resolve, reject) => {
+      this.db.all(
+        `SELECT 
+          id,
+          client_name,
+          client_code,
+          phone,
+          email,
+          contact_id,
+          price_list,
+          created_at
+        FROM registration_history 
+        WHERE status = 'success' AND contact_id IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?`,
+        [limit, offset],
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        }
+      );
+    });
+  }
+
+  /**
+   * Получение клиента по contact_id
+   */
+  getClientByContactId(contactId) {
+    return new Promise((resolve, reject) => {
+      this.db.get(
+        `SELECT * FROM registration_history 
+         WHERE contact_id = ? AND status = 'success'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [contactId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        }
+      );
+    });
+  }
+
+  /**
+   * Подсчёт всех зарегистрированных клиентов
+   */
+  getRegisteredClientsCount() {
+    return new Promise((resolve, reject) => {
+      this.db.get(
+        `SELECT COUNT(*) as count 
+         FROM registration_history 
+         WHERE status = 'success' AND contact_id IS NOT NULL`,
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row ? row.count : 0);
         }
       );
     });

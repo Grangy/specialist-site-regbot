@@ -12,6 +12,7 @@ function getMainMenu(isAdmin = false) {
 
   if (isAdmin) {
     keyboard.push(['⚡ Рег. без подтверждения']);
+    keyboard.push(['👥 Список клиентов']);
   }
 
   keyboard.push(['📊 Моя статистика', '❓ Помощь']);
@@ -130,6 +131,53 @@ function getPriceListButtons() {
 }
 
 /**
+ * Inline кнопки для списка клиентов (пагинация)
+ */
+function getClientsListButtons(page, totalPages, hasMore) {
+  const buttons = [];
+  
+  if (totalPages > 1) {
+    const navButtons = [];
+    if (page > 0) {
+      navButtons.push({ text: '⬅️ Назад', callback_data: `clients_page_${page - 1}` });
+    }
+    if (hasMore) {
+      navButtons.push({ text: 'Вперёд ➡️', callback_data: `clients_page_${page + 1}` });
+    }
+    if (navButtons.length > 0) {
+      buttons.push(navButtons);
+    }
+  }
+  
+  buttons.push([{ text: '🔄 Обновить', callback_data: 'clients_refresh' }]);
+  buttons.push([{ text: '⬅️ Назад в меню', callback_data: 'clients_back' }]);
+  
+  return {
+    reply_markup: {
+      inline_keyboard: buttons
+    }
+  };
+}
+
+/**
+ * Inline кнопки для клиента (сброс пароля)
+ */
+function getClientActionsButtons(contactId) {
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: '🔑 Сбросить пароль', callback_data: `reset_password_${contactId}` }
+        ],
+        [
+          { text: '⬅️ Назад к списку', callback_data: 'clients_back' }
+        ]
+      ]
+    }
+  };
+}
+
+/**
  * Удаление клавиатуры
  */
 function removeKeyboard() {
@@ -148,6 +196,8 @@ module.exports = {
   getConfirmationButtons,
   getAfterRegistrationButtons,
   getPriceListButtons,
+  getClientsListButtons,
+  getClientActionsButtons,
   removeKeyboard
 };
 
