@@ -199,21 +199,27 @@ async function handleApproveRegistration(bot, query) {
   const data = query.data;
 
   try {
-    // Извлекаем contact_id и user_chat_id из callback_data
+    // Извлекаем contact_id, user_chat_id и category_id из callback_data
     const parts = data.split('_');
     const contactId = parts[2];
     const userChatId = parts[3];
+    const categoryId = parts[4] || null; // category_id передаётся в callback_data
 
     await bot.answerCallbackQuery(query.id, {
       text: '⏳ Создаю ЛК...'
     });
 
-      // Получаем информацию о клиенте для category_id
+    // Если category_id не передан в callback, пытаемся получить из БД
+    let finalCategoryId = categoryId;
+    if (!finalCategoryId) {
       const clientInfo = await database.getClientByContactId(contactId);
-      const categoryId = clientInfo && clientInfo.price_list === 'Прайс 1 (+1.5%)' ? '4' : null;
-      
-      // Отправляем запрос на создание ЛК
-      const result = await createLKService.createLK(contactId, categoryId);
+      if (clientInfo && clientInfo.price_list === 'Прайс 1 (+1.5%)') {
+        finalCategoryId = '4';
+      }
+    }
+    
+    // Отправляем запрос на создание ЛК
+    const result = await createLKService.createLK(contactId, finalCategoryId);
 
     if (result.success) {
       // Обновляем сообщение - убираем кнопки, добавляем статус

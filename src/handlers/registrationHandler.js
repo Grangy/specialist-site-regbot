@@ -515,12 +515,14 @@ class RegistrationHandler {
         `✅ Статус: Ожидает подтверждения`;
 
       // Inline кнопки для подтверждения/отказа
+      // Передаём category_id в callback_data для правильной установки категории
+      const categoryIdForCallback = state.priceList === 4 ? '4' : '2';
       const keyboard = {
         inline_keyboard: [
           [
             {
               text: '✅ Подтвердить',
-              callback_data: `approve_reg_${contactId}_${chatId}`
+              callback_data: `approve_reg_${contactId}_${chatId}_${categoryIdForCallback}`
             },
             {
               text: '❌ Отказать',
