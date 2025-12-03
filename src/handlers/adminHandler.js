@@ -17,6 +17,21 @@ class AdminHandler {
    */
   async showClientsList(bot, chatId, page = 0, search = '') {
     try {
+      // Сохраняем поисковый запрос в состоянии пользователя (чтобы не передавать в callback_data)
+      if (search) {
+        await this.setUserState(chatId, { 
+          ...(await this.getUserState(chatId) || {}),
+          currentSearch: search 
+        });
+      } else {
+        // Очищаем поиск из состояния
+        const currentState = await this.getUserState(chatId);
+        if (currentState && currentState.currentSearch) {
+          delete currentState.currentSearch;
+          await this.setUserState(chatId, currentState);
+        }
+      }
+
       const result = await customersApiService.getCustomersList(page, 10, search);
 
       if (!result.success) {
@@ -76,18 +91,18 @@ class AdminHandler {
         }];
       });
 
-      // Добавляем навигацию
+      // Добавляем навигацию (без поискового запроса в callback_data - он в состоянии)
       const navButtons = [];
       if (pagination.page > 0) {
         navButtons.push({ 
           text: '⬅️ Назад', 
-          callback_data: `clients_page_${pagination.page - 1}${search ? `_search_${encodeURIComponent(search)}` : ''}` 
+          callback_data: `clients_page_${pagination.page - 1}` 
         });
       }
       if (pagination.page + 1 < pagination.total_pages) {
         navButtons.push({ 
           text: 'Вперёд ➡️', 
-          callback_data: `clients_page_${pagination.page + 1}${search ? `_search_${encodeURIComponent(search)}` : ''}` 
+          callback_data: `clients_page_${pagination.page + 1}` 
         });
       }
       if (navButtons.length > 0) {
@@ -97,7 +112,7 @@ class AdminHandler {
       // Кнопки управления
       const controlButtons = [];
       controlButtons.push({ text: '🔍 Поиск', callback_data: 'clients_search_start' });
-      controlButtons.push({ text: '🔄 Обновить', callback_data: search ? `clients_refresh_search_${encodeURIComponent(search)}` : 'clients_refresh' });
+      controlButtons.push({ text: '🔄 Обновить', callback_data: 'clients_refresh' });
       if (search) {
         controlButtons.push({ text: '❌ Очистить поиск', callback_data: 'clients_clear_search' });
       }

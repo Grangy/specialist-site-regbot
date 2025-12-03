@@ -156,13 +156,10 @@ bot.on('callback_query', async (query) => {
       // Пагинация списка клиентов
       const parts = data.split('_');
       const page = parseInt(parts[2]);
-      let search = '';
       
-      // Проверяем, есть ли поисковый запрос
-      if (data.includes('_search_')) {
-        const searchIndex = data.indexOf('_search_');
-        search = decodeURIComponent(data.substring(searchIndex + 8));
-      }
+      // Получаем поисковый запрос из состояния пользователя
+      const adminState = await adminHandler.getUserState(chatId);
+      const search = adminState && adminState.currentSearch ? adminState.currentSearch : '';
       
       await bot.answerCallbackQuery(query.id);
       await adminHandler.showClientsList(bot, chatId, page, search);
@@ -177,17 +174,24 @@ bot.on('callback_query', async (query) => {
     } else if (data === 'clients_clear_search') {
       // Очистка поиска и возврат к полному списку
       await bot.answerCallbackQuery(query.id, { text: '🔄 Показываю всех клиентов...' });
+      
+      // Очищаем поиск из состояния
+      const adminState = await adminHandler.getUserState(chatId);
+      if (adminState && adminState.currentSearch) {
+        delete adminState.currentSearch;
+        await adminHandler.setUserState(chatId, adminState);
+      }
+      
       await adminHandler.showClientsList(bot, chatId, 0, '');
-    } else if (data.startsWith('clients_refresh')) {
+    } else if (data === 'clients_refresh') {
       // Обновление списка клиентов (с сохранением поиска если есть)
       await bot.answerCallbackQuery(query.id, { text: '🔄 Обновляю...' });
-      if (data.includes('_search_')) {
-        const searchIndex = data.indexOf('_search_');
-        const search = decodeURIComponent(data.substring(searchIndex + 8));
-        await adminHandler.showClientsList(bot, chatId, 0, search);
-      } else {
-        await adminHandler.showClientsList(bot, chatId, 0);
-      }
+      
+      // Получаем поисковый запрос из состояния пользователя
+      const adminState = await adminHandler.getUserState(chatId);
+      const search = adminState && adminState.currentSearch ? adminState.currentSearch : '';
+      
+      await adminHandler.showClientsList(bot, chatId, 0, search);
     } else if (data === 'clients_back') {
       // Назад в меню
       await bot.answerCallbackQuery(query.id);
