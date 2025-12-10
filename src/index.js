@@ -274,6 +274,16 @@ async function handleApproveRegistration(bot, query) {
     const userChatId = parts[3];
     const priceCategoryId = parts[4] || null; // category_id для прайс-листа (4 если Прайс 1, иначе null)
 
+    // Проверяем, что contact_id валиден
+    if (!contactId || contactId === 'null' || contactId === 'undefined') {
+      logger.error(`Невалидный contact_id в callback query: ${contactId}`);
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
+        text: '❌ Ошибка: contact_id не найден. Невозможно создать ЛК.',
+        show_alert: true
+      });
+      return;
+    }
+
     await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
       text: '⏳ Создаю ЛК...'
     });

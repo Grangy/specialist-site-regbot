@@ -539,7 +539,37 @@ class RegistrationHandler {
       }
 
       // Получаем contact_id из ответа API
-      const contactId = result.data?.id || result.data?.contact_id || null;
+      let contactId = result.data?.id || result.data?.contact_id || null;
+
+      logger.info(`Получен contact_id из API для клиента ${state.clientName}: ${contactId}`);
+      logger.debug(`Полный ответ API:`, JSON.stringify(result, null, 2));
+
+      // Если contact_id не получен, пытаемся найти его в истории регистрации
+      if (!contactId) {
+        logger.warn(`⚠️  contact_id не найден в ответе API для клиента ${state.clientName}. Пытаюсь найти в истории регистрации...`);
+        try {
+          // Получаем последнюю запись из истории для этого пользователя
+          const history = await database.getRegistrationHistory(chatId);
+          if (history && history.length > 0) {
+            const lastRecord = history[history.length - 1];
+            // Пытаемся извлечь contact_id из api_response
+            if (lastRecord.api_response) {
+              try {
+                const apiResponse = JSON.parse(lastRecord.api_response);
+                contactId = apiResponse.data?.id || apiResponse.data?.contact_id || null;
+              } catch (e) {
+                logger.warn('Не удалось распарсить api_response из истории:', e.message);
+              }
+            }
+            // Если есть contact_id в колонке
+            if (!contactId && lastRecord.contact_id) {
+              contactId = lastRecord.contact_id;
+            }
+          }
+        } catch (e) {
+          logger.warn('Не удалось получить contact_id из истории регистрации:', e.message);
+        }
+      }
 
       // Формируем сообщение для группы
       const priceListInfo = state.priceListName ? `\n📋 Прайс-лист: ${state.priceListName}` : '';
@@ -558,6 +588,18 @@ class RegistrationHandler {
       // Передаём category_id в callback_data (4 если Прайс 1, иначе null)
       // На сервере автоматически добавится категория 2 ("Цены видны") для всех
       const priceCategoryIdForCallback = state.priceList === 4 ? '4' : '0';
+      
+      // Если contact_id всё ещё null, отправляем сообщение без кнопок подтверждения
+      if (!contactId) {
+        logger.warn(`⚠️  contact_id не найден для клиента ${state.clientName}. Отправляю уведомление без кнопок подтверждения.`);
+        const notificationMessageWithoutButtons = notificationMessage + 
+          `\n\n⚠️ ВНИМАНИЕ: contact_id не получен. Подтверждение через бота недоступно.`;
+        
+        await bot.sendMessage(groupId, notificationMessageWithoutButtons);
+        logger.info(`Уведомление о регистрации ${state.clientName} отправлено в группу ${groupId} БЕЗ кнопок (contact_id отсутствует)`);
+        return;
+      }
+
       const keyboard = {
         inline_keyboard: [
           [
