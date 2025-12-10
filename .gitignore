@@ -11,7 +11,25 @@ yarn.lock
 # Database (НЕ коммитим базы!)
 data/*.db
 data/*.db-journal
+data/*.sqlite
+data/*.sqlite3
 data/clients.json
+
+# Backup files (НЕ коммитим резервные копии с персональными данными!)
+*.backup.*
+*.backup
+*backup*.json
+*backup*.txt
+*backup*.db
+clients.backup.*.json
+
+# Personal data files (НЕ коммитим файлы с персональными данными!)
+data/*.json
+data/*.txt
+data/*.csv
+all_new_clients.txt
+december_new_clients.txt
+*_new_clients.txt
 
 # Logs (НЕ коммитим логи!)
 logs/

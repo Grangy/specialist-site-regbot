@@ -5,6 +5,7 @@ const createLKService = require('../services/createLKService');
 const logger = require('../utils/logger');
 const keyboards = require('../keyboards/keyboards');
 const config = require('../config/config');
+const telegramUtils = require('../utils/telegramUtils');
 
 /**
  * Обработчик регистрации клиентов
@@ -246,78 +247,98 @@ class RegistrationHandler {
    * Обработка выбора прайс-листа
    */
   async handlePriceListSelection(bot, query) {
-    const chatId = query.message.chat.id;
+    const chatId = query.message?.chat?.id;
     const data = query.data;
 
-    const state = await this.getUserState(chatId);
-    if (!state) {
-      await bot.answerCallbackQuery(query.id, {
-        text: '❌ Сессия истекла. Начните заново.',
+    if (!chatId) {
+      logger.error('Невалидный query в handlePriceListSelection');
+      return;
+    }
+
+    try {
+      const state = await this.getUserState(chatId);
+      if (!state) {
+        await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
+          text: '❌ Сессия истекла. Начните заново.',
+          show_alert: true
+        });
+        return;
+      }
+
+      // Определяем выбранный прайс-лист
+      let priceList = null;
+      let priceListName = 'Прайс';
+      
+      if (data === 'price_list_1') {
+        priceList = 4; // ID категории "Цена Прайс лист1"
+        priceListName = 'Прайс 1 (+1.5%)';
+      } else {
+        priceList = null; // Обычный прайс без категории
+        priceListName = 'Прайс';
+      }
+
+      state.priceList = priceList;
+      state.priceListName = priceListName;
+
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
+        text: `Выбран: ${priceListName}`
+      });
+
+      // Если регистрация без подтверждения - сразу регистрируем
+      if (state.withoutApproval === true) {
+        logger.info(`Регистрация без подтверждения для админа ${chatId}`);
+        await this.registerWithoutApproval(bot, chatId, state);
+        return;
+      }
+
+      // Иначе показываем сводку для подтверждения
+      state.step = 'awaiting_confirmation';
+      await this.setUserState(chatId, state);
+
+      await bot.sendMessage(
+        chatId,
+        `📋 Проверьте данные перед регистрацией:\n\n` +
+        `👤 Клиент: ${state.clientName}\n` +
+        `🔢 Код 1С: ${state.clientCode}\n` +
+        `👔 Менеджер: ${state.clientManager || 'Не указан'}\n` +
+        `📱 Телефон: ${state.phone}\n` +
+        `📧 Email: ${state.email}\n` +
+        `📋 Прайс-лист: ${priceListName}\n\n` +
+        `Всё верно?`,
+        keyboards.getConfirmationButtons()
+      );
+    } catch (error) {
+      logger.error('Ошибка в handlePriceListSelection:', error);
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
+        text: '❌ Произошла ошибка',
         show_alert: true
       });
-      return;
     }
-
-    // Определяем выбранный прайс-лист
-    let priceList = null;
-    let priceListName = 'Прайс';
-    
-    if (data === 'price_list_1') {
-      priceList = 4; // ID категории "Цена Прайс лист1"
-      priceListName = 'Прайс 1 (+1.5%)';
-    } else {
-      priceList = null; // Обычный прайс без категории
-      priceListName = 'Прайс';
-    }
-
-    state.priceList = priceList;
-    state.priceListName = priceListName;
-
-    await bot.answerCallbackQuery(query.id, {
-      text: `Выбран: ${priceListName}`
-    });
-
-    // Если регистрация без подтверждения - сразу регистрируем
-    if (state.withoutApproval === true) {
-      logger.info(`Регистрация без подтверждения для админа ${chatId}`);
-      await this.registerWithoutApproval(bot, chatId, state);
-      return;
-    }
-
-    // Иначе показываем сводку для подтверждения
-    state.step = 'awaiting_confirmation';
-    await this.setUserState(chatId, state);
-
-    await bot.sendMessage(
-      chatId,
-      `📋 Проверьте данные перед регистрацией:\n\n` +
-      `👤 Клиент: ${state.clientName}\n` +
-      `🔢 Код 1С: ${state.clientCode}\n` +
-      `👔 Менеджер: ${state.clientManager || 'Не указан'}\n` +
-      `📱 Телефон: ${state.phone}\n` +
-      `📧 Email: ${state.email}\n` +
-      `📋 Прайс-лист: ${priceListName}\n\n` +
-      `Всё верно?`,
-      keyboards.getConfirmationButtons()
-    );
   }
 
   /**
    * Подтверждение и отправка регистрации
    */
   async confirmRegistration(bot, query) {
-    const chatId = query.message.chat.id;
-    const state = await this.getUserState(chatId);
-
-    if (!state) {
-      await bot.answerCallbackQuery(query.id, {
-        text: '❌ Сессия истекла. Начните заново.',
-        show_alert: true
-      });
+    const chatId = query.message?.chat?.id;
+    
+    if (!chatId) {
+      logger.error('Невалидный query в confirmRegistration');
       return;
     }
 
-    await bot.answerCallbackQuery(query.id, {
+    try {
+      const state = await this.getUserState(chatId);
+
+      if (!state) {
+        await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
+          text: '❌ Сессия истекла. Начните заново.',
+          show_alert: true
+        });
+        return;
+      }
+
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
       text: '⏳ Отправляю данные...'
     });
 
@@ -401,6 +422,25 @@ class RegistrationHandler {
         originalError: result.originalError,
         status: result.status
       });
+    }
+    } catch (error) {
+      logger.error('Ошибка в confirmRegistration:', error);
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
+        text: '❌ Произошла ошибка при регистрации',
+        show_alert: true
+      });
+      
+      // Пытаемся отправить сообщение об ошибке
+      try {
+        const isAdmin = this.isAdmin(chatId);
+        await bot.sendMessage(
+          chatId,
+          '❌ Произошла ошибка. Попробуйте позже.',
+          keyboards.getMainMenu(isAdmin)
+        );
+      } catch (e) {
+        logger.error('Не удалось отправить сообщение об ошибке:', e);
+      }
     }
   }
 

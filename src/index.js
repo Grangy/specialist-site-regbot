@@ -7,6 +7,7 @@ const registrationHandler = require('./handlers/registrationHandler');
 const adminHandler = require('./handlers/adminHandler');
 const keyboards = require('./keyboards/keyboards');
 const createLKService = require('./services/createLKService');
+const telegramUtils = require('./utils/telegramUtils');
 
 // Создаем экземпляр бота
 const bot = new TelegramBot(config.telegram.token, config.telegram.options);
@@ -111,15 +112,31 @@ bot.onText(/\/cancel/, async (msg) => {
  * Обработка callback query (inline кнопки)
  */
 bot.on('callback_query', async (query) => {
-  const chatId = query.message.chat.id;
+  const chatId = query.message?.chat?.id;
   const data = query.data;
+
+  // Проверка на валидность query
+  if (!query || !query.id || !data) {
+    logger.warn('Получен невалидный callback query');
+    return;
+  }
+
+  // Проверка на устаревший query
+  if (telegramUtils.isCallbackQueryExpired(query)) {
+    logger.warn(`Callback query ${query.id} слишком старый, игнорируем`);
+    await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
+      text: '⏰ Запрос устарел. Пожалуйста, обновите сообщение.',
+      show_alert: false
+    });
+    return;
+  }
 
   logger.info(`Callback query: ${data} от пользователя ${chatId}`);
 
   // Проверка авторизации
   const isAuthorized = await authHandler.checkAuth(bot, { chat: { id: chatId } });
   if (!isAuthorized) {
-    await bot.answerCallbackQuery(query.id, {
+    await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
       text: '❌ Необходима авторизация',
       show_alert: true
     });
@@ -130,18 +147,18 @@ bot.on('callback_query', async (query) => {
     if (data.startsWith('select_client_')) {
       await registrationHandler.handleClientSelection(bot, query);
     } else if (data === 'new_search') {
-      await bot.answerCallbackQuery(query.id);
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id);
       await registrationHandler.startClientSearch(bot, chatId);
     } else if (data === 'confirm_registration') {
       await registrationHandler.confirmRegistration(bot, query);
     } else if (data === 'cancel_registration') {
-      await bot.answerCallbackQuery(query.id);
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id);
       await registrationHandler.cancelRegistration(bot, chatId, true);
     } else if (data === 'new_registration') {
-      await bot.answerCallbackQuery(query.id);
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id);
       await registrationHandler.startClientSearch(bot, chatId);
     } else if (data === 'show_stats') {
-      await bot.answerCallbackQuery(query.id);
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id);
       await registrationHandler.showUserStats(bot, chatId);
     } else if (data.startsWith('approve_reg_')) {
       // Подтверждение регистрации из группы
@@ -161,19 +178,19 @@ bot.on('callback_query', async (query) => {
       const adminState = await adminHandler.getUserState(chatId);
       const search = adminState && adminState.currentSearch ? adminState.currentSearch : '';
       
-      await bot.answerCallbackQuery(query.id);
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id);
       await adminHandler.showClientsList(bot, chatId, page, search);
     } else if (data === 'admin_search_clients') {
       // Запуск поиска клиентов для админа (отдельная кнопка)
-      await bot.answerCallbackQuery(query.id);
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id);
       await adminHandler.startClientSearch(bot, chatId);
     } else if (data === 'clients_search_start') {
       // Запуск поиска внутри списка клиентов
-      await bot.answerCallbackQuery(query.id);
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id);
       await adminHandler.startClientsListSearch(bot, chatId);
     } else if (data === 'clients_clear_search') {
       // Очистка поиска и возврат к полному списку
-      await bot.answerCallbackQuery(query.id, { text: '🔄 Показываю всех клиентов...' });
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id, { text: '🔄 Показываю всех клиентов...' });
       
       // Очищаем поиск из состояния
       const adminState = await adminHandler.getUserState(chatId);
@@ -185,7 +202,7 @@ bot.on('callback_query', async (query) => {
       await adminHandler.showClientsList(bot, chatId, 0, '');
     } else if (data === 'clients_refresh') {
       // Обновление списка клиентов (с сохранением поиска если есть)
-      await bot.answerCallbackQuery(query.id, { text: '🔄 Обновляю...' });
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id, { text: '🔄 Обновляю...' });
       
       // Получаем поисковый запрос из состояния пользователя
       const adminState = await adminHandler.getUserState(chatId);
@@ -194,7 +211,7 @@ bot.on('callback_query', async (query) => {
       await adminHandler.showClientsList(bot, chatId, 0, search);
     } else if (data === 'clients_back') {
       // Назад в меню
-      await bot.answerCallbackQuery(query.id);
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id);
       const isAdmin = registrationHandler.isAdmin(chatId);
       await bot.sendMessage(
         chatId,
@@ -208,13 +225,25 @@ bot.on('callback_query', async (query) => {
       // Сброс пароля
       await adminHandler.resetClientPassword(bot, query);
     } else {
-      await bot.answerCallbackQuery(query.id, {
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
         text: '❌ Неизвестная команда'
       });
     }
   } catch (error) {
     logger.error('Ошибка обработки callback query:', error);
-    await bot.answerCallbackQuery(query.id, {
+    
+    // Обрабатываем специфичные ошибки Telegram
+    if (error.message && (
+      error.message.includes('query is too old') ||
+      error.message.includes('response timeout expired') ||
+      error.message.includes('query ID is invalid')
+    )) {
+      logger.warn(`Callback query ${query.id} устарел, игнорируем ошибку`);
+      return;
+    }
+
+    // Для других ошибок пытаемся ответить
+    await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
       text: '❌ Произошла ошибка',
       show_alert: true
     });
@@ -225,9 +254,18 @@ bot.on('callback_query', async (query) => {
  * Обработка подтверждения регистрации из группы
  */
 async function handleApproveRegistration(bot, query) {
-  const chatId = query.message.chat.id;
-  const messageId = query.message.message_id;
+  const chatId = query.message?.chat?.id;
+  const messageId = query.message?.message_id;
   const data = query.data;
+
+  if (!chatId || !messageId) {
+    logger.error('Невалидный query в handleApproveRegistration');
+    await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
+      text: '❌ Ошибка: невалидные данные запроса',
+      show_alert: true
+    });
+    return;
+  }
 
   try {
     // Извлекаем contact_id, user_chat_id и category_id из callback_data
@@ -236,18 +274,24 @@ async function handleApproveRegistration(bot, query) {
     const userChatId = parts[3];
     const priceCategoryId = parts[4] || null; // category_id для прайс-листа (4 если Прайс 1, иначе null)
 
-    await bot.answerCallbackQuery(query.id, {
+    await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
       text: '⏳ Создаю ЛК...'
     });
 
     // Если category_id не передан в callback, пытаемся получить из БД
     let finalPriceCategoryId = priceCategoryId === '0' ? null : priceCategoryId;
     if (!finalPriceCategoryId || finalPriceCategoryId === '0') {
-      const clientInfo = await database.getClientByContactId(contactId);
-      if (clientInfo && clientInfo.price_list === 'Прайс 1 (+1.5%)') {
-        finalPriceCategoryId = '4';
-      } else {
-        finalPriceCategoryId = null; // Обычный прайс - только категория 2 будет добавлена на сервере
+      try {
+        const clientInfo = await database.getClientByContactId(contactId);
+        if (clientInfo && clientInfo.price_list === 'Прайс 1 (+1.5%)') {
+          finalPriceCategoryId = '4';
+        } else {
+          finalPriceCategoryId = null; // Обычный прайс - только категория 2 будет добавлена на сервере
+        }
+      } catch (dbError) {
+        logger.warn(`Не удалось получить информацию о клиенте из БД: ${dbError.message}`);
+        // Продолжаем с null
+        finalPriceCategoryId = null;
       }
     }
     
@@ -264,36 +308,27 @@ async function handleApproveRegistration(bot, query) {
         '✅ Статус: ПОДТВЕРЖДЕНО\n🔑 ЛК создан успешно'
       );
 
-      await bot.editMessageText(updatedText, {
-        chat_id: chatId,
-        message_id: messageId
-      });
+      // Проверяем, изменился ли текст
+      if (updatedText !== originalText) {
+        await telegramUtils.safeEditMessageText(bot, chatId, messageId, updatedText);
+      }
 
       // Убираем кнопки
-      await bot.editMessageReplyMarkup(
-        { inline_keyboard: [] },
-        {
-          chat_id: chatId,
-          message_id: messageId
-        }
-      );
+      await telegramUtils.safeEditMessageReplyMarkup(bot, chatId, messageId, { inline_keyboard: [] });
 
       // Уведомляем пользователя
       if (userChatId) {
-        try {
-          await bot.sendMessage(
-            userChatId,
-            '✅ Регистрация подтверждена!\n\n' +
-            'Личный кабинет создан. Данные для входа отправлены на указанный email.'
-          );
-        } catch (e) {
-          logger.warn('Не удалось уведомить пользователя:', e.message);
-        }
+        await telegramUtils.safeSendMessage(
+          bot,
+          userChatId,
+          '✅ Регистрация подтверждена!\n\n' +
+          'Личный кабинет создан. Данные для входа отправлены на указанный email.'
+        );
       }
 
       logger.info(`ЛК создан для contact_id: ${contactId}`);
     } else {
-      await bot.answerCallbackQuery(query.id, {
+      await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
         text: `❌ Ошибка: ${result.error}`,
         show_alert: true
       });
@@ -302,7 +337,18 @@ async function handleApproveRegistration(bot, query) {
     }
   } catch (error) {
     logger.error('Ошибка обработки подтверждения:', error);
-    await bot.answerCallbackQuery(query.id, {
+    
+    // Обрабатываем специфичные ошибки
+    if (error.message && (
+      error.message.includes('query is too old') ||
+      error.message.includes('response timeout expired') ||
+      error.message.includes('query ID is invalid')
+    )) {
+      logger.warn(`Callback query ${query.id} устарел в handleApproveRegistration`);
+      return;
+    }
+
+    await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
       text: '❌ Произошла ошибка',
       show_alert: true
     });
@@ -313,9 +359,18 @@ async function handleApproveRegistration(bot, query) {
  * Обработка отказа в регистрации из группы
  */
 async function handleRejectRegistration(bot, query) {
-  const chatId = query.message.chat.id;
-  const messageId = query.message.message_id;
+  const chatId = query.message?.chat?.id;
+  const messageId = query.message?.message_id;
   const data = query.data;
+
+  if (!chatId || !messageId) {
+    logger.error('Невалидный query в handleRejectRegistration');
+    await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
+      text: '❌ Ошибка: невалидные данные запроса',
+      show_alert: true
+    });
+    return;
+  }
 
   try {
     // Извлекаем user_chat_id из callback_data
@@ -323,7 +378,7 @@ async function handleRejectRegistration(bot, query) {
     const contactId = parts[2];
     const userChatId = parts[3];
 
-    await bot.answerCallbackQuery(query.id, {
+    await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
       text: 'Регистрация отклонена'
     });
 
@@ -334,37 +389,39 @@ async function handleRejectRegistration(bot, query) {
       '❌ Статус: ОТКЛОНЕНО'
     );
 
-    await bot.editMessageText(updatedText, {
-      chat_id: chatId,
-      message_id: messageId
-    });
+    // Проверяем, изменился ли текст
+    if (updatedText !== originalText) {
+      await telegramUtils.safeEditMessageText(bot, chatId, messageId, updatedText);
+    }
 
     // Убираем кнопки
-    await bot.editMessageReplyMarkup(
-      { inline_keyboard: [] },
-      {
-        chat_id: chatId,
-        message_id: messageId
-      }
-    );
+    await telegramUtils.safeEditMessageReplyMarkup(bot, chatId, messageId, { inline_keyboard: [] });
 
     // Уведомляем пользователя
     if (userChatId) {
-      try {
-        await bot.sendMessage(
-          userChatId,
-          '❌ К сожалению, регистрация отклонена.\n\n' +
-          'Если у вас есть вопросы, обратитесь к администратору.'
-        );
-      } catch (e) {
-        logger.warn('Не удалось уведомить пользователя:', e.message);
-      }
+      await telegramUtils.safeSendMessage(
+        bot,
+        userChatId,
+        '❌ К сожалению, регистрация отклонена.\n\n' +
+        'Если у вас есть вопросы, обратитесь к администратору.'
+      );
     }
 
     logger.info(`Регистрация отклонена для contact_id: ${contactId}`);
   } catch (error) {
     logger.error('Ошибка обработки отказа:', error);
-    await bot.answerCallbackQuery(query.id, {
+    
+    // Обрабатываем специфичные ошибки
+    if (error.message && (
+      error.message.includes('query is too old') ||
+      error.message.includes('response timeout expired') ||
+      error.message.includes('query ID is invalid')
+    )) {
+      logger.warn(`Callback query ${query.id} устарел в handleRejectRegistration`);
+      return;
+    }
+
+    await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
       text: '❌ Произошла ошибка',
       show_alert: true
     });
@@ -541,6 +598,15 @@ process.on('uncaughtException', (error) => {
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  
+  // Логируем детали ошибки
+  if (reason instanceof Error) {
+    logger.error('Error stack:', reason.stack);
+  }
+  
+  // Не завершаем процесс, чтобы бот продолжал работать
+  // Просто логируем ошибку
+  logger.warn('Бот продолжает работу несмотря на необработанное отклонение промиса');
 });
 
 logger.info('✅ Бот готов к работе!');

@@ -299,6 +299,22 @@ class Database {
   }
 
   /**
+   * Получение записи регистрации по ID
+   */
+  getRegistrationById(id) {
+    return new Promise((resolve, reject) => {
+      this.db.get(
+        `SELECT * FROM registration_history WHERE id = ?`,
+        [id],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        }
+      );
+    });
+  }
+
+  /**
    * Подсчёт всех зарегистрированных клиентов
    */
   getRegisteredClientsCount() {
