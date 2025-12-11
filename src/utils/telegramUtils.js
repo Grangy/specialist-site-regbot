@@ -140,7 +140,43 @@ class TelegramUtils {
 
     return queryAge > MAX_AGE;
   }
+
+  /**
+   * Проверка, является ли callback_data критическим
+   * Критические кнопки должны работать даже если запрос устарел
+   */
+  static isCriticalCallback(callbackData) {
+    if (!callbackData) {
+      return false;
+    }
+
+    // Список критических callback_data, которые должны работать всегда
+    const criticalCallbacks = [
+      'new_registration',      // "Зарегистрировать ещё"
+      'new_search',            // Новый поиск
+      'cancel_registration',   // Отмена регистрации
+      'clients_back',          // "Назад"
+      'clients_refresh',       // Обновление списка
+      'clients_clear_search',  // Очистка поиска
+      'show_stats',            // Статистика
+      'admin_search_clients',  // Поиск клиентов (админ)
+      'clients_search_start',  // Запуск поиска в списке
+    ];
+
+    // Проверяем точное совпадение
+    if (criticalCallbacks.includes(callbackData)) {
+      return true;
+    }
+
+    // Проверяем префиксы для пагинации
+    if (callbackData.startsWith('clients_page_')) {
+      return true;
+    }
+
+    return false;
+  }
 }
 
 module.exports = TelegramUtils;
+
 

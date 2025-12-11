@@ -122,13 +122,23 @@ bot.on('callback_query', async (query) => {
   }
 
   // Проверка на устаревший query
-  if (telegramUtils.isCallbackQueryExpired(query)) {
+  // Для критических кнопок (навигация, новые действия) пропускаем проверку
+  const isCritical = telegramUtils.isCriticalCallback(data);
+  const isExpired = telegramUtils.isCallbackQueryExpired(query);
+  
+  if (isExpired && !isCritical) {
+    // Для некритических устаревших запросов показываем сообщение и игнорируем
     logger.warn(`Callback query ${query.id} слишком старый, игнорируем`);
     await telegramUtils.safeAnswerCallbackQuery(bot, query.id, {
       text: '⏰ Запрос устарел. Пожалуйста, обновите сообщение.',
       show_alert: false
     });
     return;
+  }
+  
+  // Для критических кнопок или не устаревших запросов продолжаем обработку
+  if (isExpired && isCritical) {
+    logger.info(`Callback query ${query.id} устарел, но это критическая кнопка (${data}), обрабатываем`);
   }
 
   logger.info(`Callback query: ${data} от пользователя ${chatId}`);
