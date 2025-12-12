@@ -173,6 +173,11 @@ class TelegramUtils {
       return true;
     }
 
+    // Проверяем префиксы для подтверждения/отклонения регистрации
+    if (callbackData.startsWith('approve_reg_') || callbackData.startsWith('reject_reg_')) {
+      return true;
+    }
+
     return false;
   }
 }
