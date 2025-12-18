@@ -76,19 +76,61 @@ async function updateDmitryClientsMinNoncashSum() {
       
       if (listResult.success && listResult.customers) {
         listResult.customers.forEach(customer => {
+          let found = false;
+          
+          // Сначала ищем по точному совпадению kodv1s
           if (customer.kodv1s) {
-            // Нормализуем kodv1s для сравнения
-            const normalizedCode = customer.kodv1s.trim().toUpperCase();
+            // Нормализуем kodv1s для сравнения (убираем пробелы, дефисы, приводим к верхнему регистру)
+            const normalizedCode = customer.kodv1s.trim().toUpperCase().replace(/\s+/g, '').replace(/-/g, '');
             
-            // Проверяем, есть ли этот клиент в списке Дмитрия
-            if (dmitryClientsMap.has(normalizedCode)) {
-              const dmitryClient = dmitryClientsMap.get(normalizedCode);
-              customersToUpdate.push({
-                contact_id: customer.contact_id,
-                kodv1s: customer.kodv1s,
-                name: customer.name,
-                dmitryClient: dmitryClient
-              });
+            // Проверяем точное совпадение
+            for (const [dmitryCode, dmitryClient] of dmitryClientsMap.entries()) {
+              const normalizedDmitryCode = dmitryCode.replace(/\s+/g, '').replace(/-/g, '');
+              if (normalizedCode === normalizedDmitryCode) {
+                customersToUpdate.push({
+                  contact_id: customer.contact_id,
+                  kodv1s: customer.kodv1s,
+                  name: customer.name,
+                  dmitryClient: dmitryClient,
+                  matchType: 'kodv1s'
+                });
+                found = true;
+                break;
+              }
+            }
+          }
+          
+          // Если не нашли по kodv1s, пробуем поиск по имени (частичное совпадение)
+          if (!found && customer.name) {
+            const customerName = customer.name.trim().toLowerCase();
+            for (const [dmitryCode, dmitryClient] of dmitryClientsMap.entries()) {
+              const dmitryName = (dmitryClient.name || dmitryClient['Наименование'] || '').trim().toLowerCase();
+              
+              // Проверяем частичное совпадение имен (минимум 5 символов совпадают)
+              if (dmitryName.length >= 5 && customerName.length >= 5) {
+                // Извлекаем ключевые слова из имен
+                const customerWords = customerName.split(/\s+/).filter(w => w.length > 3);
+                const dmitryWords = dmitryName.split(/\s+/).filter(w => w.length > 3);
+                
+                // Если есть общие слова
+                const commonWords = customerWords.filter(w => dmitryWords.some(dw => dw.includes(w) || w.includes(dw)));
+                if (commonWords.length > 0) {
+                  // Проверяем, что это не дубликат
+                  const alreadyAdded = customersToUpdate.some(c => c.contact_id === customer.contact_id);
+                  if (!alreadyAdded) {
+                    customersToUpdate.push({
+                      contact_id: customer.contact_id,
+                      kodv1s: customer.kodv1s || 'не указан',
+                      name: customer.name,
+                      dmitryClient: dmitryClient,
+                      matchType: 'name',
+                      dmitryCode: dmitryCode
+                    });
+                    found = true;
+                    break;
+                  }
+                }
+              }
             }
           }
         });
@@ -116,9 +158,35 @@ async function updateDmitryClientsMinNoncashSum() {
     console.log(`✅ Загружено ${totalLoaded} клиентов из БД сайта`);
     console.log(`✅ Найдено ${customersToUpdate.length} зарегистрированных клиентов Дмитрия для обновления\n`);
 
+    // Создаем список всех клиентов Дмитрия с информацией о регистрации
+    const allDmitryClientsStatus = dmitryClients.map(client => {
+      const code = (client.code || client['Код'] || '').trim().toUpperCase();
+      const name = client.name || client['Наименование'] || 'Без имени';
+      const isRegistered = customersToUpdate.some(c => 
+        (c.kodv1s || '').trim().toUpperCase() === code
+      );
+      return {
+        name,
+        code,
+        isRegistered,
+        contact_id: isRegistered ? customersToUpdate.find(c => 
+          (c.kodv1s || '').trim().toUpperCase() === code
+        )?.contact_id : null
+      };
+    });
+
+    const registeredCount = allDmitryClientsStatus.filter(c => c.isRegistered).length;
+    const notRegisteredCount = allDmitryClientsStatus.filter(c => !c.isRegistered).length;
+
+    console.log(`📊 Статистика по клиентам Дмитрия:`);
+    console.log(`   ✅ Зарегистрировано на сайте: ${registeredCount}`);
+    console.log(`   ⚠️  Не зарегистрировано: ${notRegisteredCount}`);
+    console.log(`   📋 Всего в Excel: ${dmitryClients.length}\n`);
+
     if (customersToUpdate.length === 0) {
       console.log('⚠️  Не найдено зарегистрированных клиентов Дмитрия в БД сайта.');
-      console.log('   Возможно, они еще не зарегистрированы на сайте.\n');
+      console.log('   Возможно, они еще не зарегистрированы на сайте.');
+      console.log('\n💡 Для регистрации клиентов используйте бота или API регистрации.\n');
       process.exit(0);
     }
 
@@ -143,6 +211,9 @@ async function updateDmitryClientsMinNoncashSum() {
       console.log(`[${i + 1}/${customersToUpdate.length}] Обработка: ${name}`);
       console.log(`   Код: ${kodv1s}`);
       console.log(`   Contact ID: ${contactId}`);
+      if (customer.matchType === 'name') {
+        console.log(`   ⚠️  Найден по имени (kodv1s может не совпадать)`);
+      }
 
       try {
         // Обновляем поле
@@ -220,10 +291,27 @@ async function updateDmitryClientsMinNoncashSum() {
       isDryRun: isDryRun,
       minNoncashSum: minNoncashSum,
       total: dmitryClients.length,
-      results: results
+      registered: registeredCount,
+      notRegistered: notRegisteredCount,
+      results: results,
+      allClientsStatus: allDmitryClientsStatus
     };
     fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), 'utf8');
     console.log(`📄 Отчет сохранен: ${reportPath}\n`);
+
+    // Сохраняем список незарегистрированных клиентов
+    if (notRegisteredCount > 0) {
+      const notRegisteredPath = path.join(__dirname, '..', 'data', `dmitry_clients_not_registered_${Date.now()}.txt`);
+      const notRegisteredList = allDmitryClientsStatus
+        .filter(c => !c.isRegistered)
+        .map((c, i) => `${i + 1}. ${c.name} (${c.code})`)
+        .join('\n');
+      fs.writeFileSync(notRegisteredPath, 
+        `Клиенты Дмитрия, не зарегистрированные на сайте (${notRegisteredCount} из ${dmitryClients.length}):\n\n${notRegisteredList}`,
+        'utf8'
+      );
+      console.log(`📋 Список незарегистрированных клиентов сохранен: ${notRegisteredPath}\n`);
+    }
 
     logger.info(`Обновление клиентов Дмитрия завершено: успешно ${results.success.length}, ошибок ${results.failed.length}, найдено зарегистрированных ${customersToUpdate.length}`);
 
