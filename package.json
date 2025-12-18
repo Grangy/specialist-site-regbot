@@ -15,6 +15,8 @@
     "clean-db": "node scripts/cleanDatabase.js",
     "update-server": "node scripts/updateCreateLKApi.js",
     "reset-password": "node scripts/resetPasswordById.js",
+    "update-dmitry-clients": "node scripts/updateDmitryClientsMinNoncashSum.js",
+    "upload-update-field-api": "node scripts/uploadUpdateCustomerFieldApi.js",
     "pm2:start": "pm2 start ecosystem.config.js --env production",
     "pm2:stop": "pm2 stop telegram-bot",
     "pm2:restart": "pm2 restart telegram-bot",
